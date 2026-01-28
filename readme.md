@@ -4,6 +4,8 @@ Attached below are the current endpoints and how to utilize them in the frontend
 
 **Database Status**
 
+<blockquote>
+
 _Retrieves the current status of the connection to the DB hosted on Google Cloud._
 
 Endpoint:
@@ -14,25 +16,34 @@ JSON Request:
 
 `N/A`
 
-Example Usage:
+CURL Example:
 
-`curl http://localhost:8000/api/status`
+```
+curl http://localhost:8000/api/status
+```
 
 Success Response (200)
 
-`{
+```
+{
   "status": "success",
   "message": "Connected to database successfully!"
-}`
+}
+```
 
 Failure Response (500)
 
-`{
+```
+{
   "Connection Error:": "(error details")
-}`
+}
+```
+</blockquote>
 
 **Create Project**
 
+<blockquote>
+  
 _Creates a new project, including title, description, instructions. Does not include fields (handled in a separate endpoint)._
 
 Endpoint:
@@ -41,12 +52,63 @@ Endpoint:
 
 JSON Request:
 
+```
 {
   "teacher_id": 1,
   "project_title": "Bumblebee Tracker",
   "project_description": "Track different bumblees you see.",
   "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee."
 }
+```
 
-Example Usage:
+CURL Example:
 
+```
+curl -X POST http://localhost:8000/api/projects \
+  -H "Content-Type: application/json" \
+  -d '{
+    "teacher_id": 1,
+    "project_title": "Bumblebee Tracker",
+    "project_description": "Track different bumblees you see.",
+    "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee."
+  }
+```
+
+Success Response (201)
+
+```
+{
+  "success": true,
+  "message": "Project created successfully!",
+  "data": {
+    "project_id": 1,
+    "project_code": "A82KP0QM",
+    "project_title": "Bumblebee Tracker",
+    "project_description": "Track different bumblees you see.",
+    "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee."
+  }
+}
+```
+
+Failure Response (400 - Client Error)
+
+```
+{
+  "success": false,
+  "error": "No data provided."
+}
+```
+
+Failure Response (500 - Server Error)
+
+```
+{
+  "Server Error:": "(error details")
+}
+```
+
+
+
+
+
+</blockquote>
