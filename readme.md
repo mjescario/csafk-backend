@@ -121,7 +121,9 @@ JSON Request Requirements:
 
 CURL Example:
 
-`curl http://localhost:8000/api/projects/1`
+```
+curl http://localhost:8000/api/projects/1
+```
 
 Success Response (200):
 
@@ -157,5 +159,130 @@ Failure Response (500 - Server Error):
   "Server Error:": "(error details")
 }
 ```
+
+</blockquote>
+
+**Retrieve List of Projects by Teacher**
+
+<blockquote>
+
+_Returns a list of projects by teacher._
+
+Endpoint:
+
+'GET /api/users/{teacher_id}/projects'
+
+JSON Request Requirements:
+
+* teacher_id
+
+CURL Example:
+
+```
+curl http://localhost:8000/api/users/1/projects
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "data": [
+    {
+      "project_id": 1,
+      "teacher_id": 1,
+      "project_code": "A82KP0QM",
+      "project_title": "Bumblebee Tracker",
+      "project_description": "Track different bumblees you see.",
+      "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee."
+    },
+    {
+      "project_id": 2,
+      "teacher_id": 1,
+      "project_code": "TP224Z1AY",
+      "project_title": "Snow Day",
+      "project_description": "Track how much snow you get over the weekend.",
+      "project_instructions": "Log what time and how much snow is currently outside."
+    }
+  ]
+}
+```
+
+Failure Response (500 - Server Error):
+
+```
+{
+  "Server Error:": "(error details")
+}
+```
+
+</blockquote>
+
+**Delete Project by ID**
+
+<blockquote>
+
+_Deletes a project (and associated data like observations) by its ID._
+
+Endpoint:
+
+'DELETE /api/projects/{project_id}'
+
+JSON Request Requirements:
+
+* project_id
+
+CURL Example:
+
+```
+curl -X DELETE http://localhost:8000/api/projects/1
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "message": "Project ID:1 deleted successfully."
+}
+```
+
+Failure Response (404 - Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found",
+  "message": "No project with ID 10 exists."
+}
+```
+
+Failure Response (500 - Server Error):
+
+```
+{
+  "Server Error:": "(error details")
+}
+```
+
+</blockquote>
+
+**Endpoint Title**
+
+<blockquote>
+
+_Description_
+
+Endpoint:
+
+''
+
+JSON Request Requirements:
+
+CURL Example:
+
+Success Response:
+
+Failure Response:
 
 </blockquote>
