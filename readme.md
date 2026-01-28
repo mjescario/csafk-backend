@@ -226,7 +226,7 @@ _Deletes a project (and associated data like observations) by its ID._
 
 Endpoint:
 
-'DELETE /api/projects/{project_id}'
+`DELETE /api/projects/{project_id}`
 
 JSON Request Requirements:
 
