@@ -12,9 +12,9 @@ Endpoint:
 
 `GET /api/status`
 
-JSON Request:
+JSON Request Requirements:
 
-`N/A`
+* None
 
 CURL Example:
 
@@ -50,16 +50,12 @@ Endpoint:
 
 `POST /api/projects`
 
-JSON Request:
+JSON Request Requirements:
 
-```
-{
-  "teacher_id": 1,
-  "project_title": "Bumblebee Tracker",
-  "project_description": "Track different bumblees you see.",
-  "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee."
-}
-```
+* teacher_id
+* project_title
+* project_description
+* project_instructions
 
 CURL Example:
 
@@ -107,8 +103,59 @@ Failure Response (500 - Server Error)
 }
 ```
 
+</blockquote>
+
+**Retrieve Project by ID**
+
+<blockquote>
+
+_Retrieves a single project's details by its ID._
+
+Endpoint:
+
+`GET /api/projects/{project_id}`
+
+JSON Request Requirements:
+
+* project_id
+
+CURL Example:
+
+`curl http://localhost:8000/api/projects/1`
+
+Success Response (200):
 
 
+```
+{
+  "success": true,
+  "data": {
+    "project_id": 1,
+    "teacher_id": 1,
+    "project_code": "A82KP0QM",
+    "project_title": "Bumblebee Tracker",
+    "project_description": "Track different bumblees you see.",
+    "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee."
+  }
+}
+```
 
+Failure Response (404 - Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with ID #1 exists."
+}
+```
+
+Failure Response (500 - Server Error):
+
+```
+{
+  "Server Error:": "(error details")
+}
+```
 
 </blockquote>
