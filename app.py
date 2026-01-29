@@ -146,6 +146,78 @@ def create_project():
     except Exception as e:
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
+    
+# ----------
+# Name: Update Project
+# Method: PUT
+# Endpoint: /projects/<int:project_id>
+# Description: Updates an existing project's details.
+# ----------
+
+@app.route("/api/projects/<int:project_id>", methods=["PUT"])
+def update_project(project_id):
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No data provided."
+            }), 400
+
+        # First check if project exists
+        result = db.session.execute(
+            text("SELECT project_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        
+        if not result.fetchone():
+            return jsonify({
+                "success": False,
+                "error": "Project not found",
+                "message": f"No project with ID {project_id} exists."
+            }), 404
+
+        # Initialize update_fields and append updated fields.
+        update_fields = []
+        params = {"project_id": project_id}
+        
+        if "project_title" in data:
+            update_fields.append("project_title = :project_title")
+            params["project_title"] = data["project_title"]
+        
+        if "project_description" in data:
+            update_fields.append("project_description = :project_description")
+            params["project_description"] = data["project_description"]
+        
+        if "project_instructions" in data:
+            update_fields.append("project_instructions = :project_instructions")
+            params["project_instructions"] = data["project_instructions"]
+
+        # Error Response if not valid.
+        if not update_fields:
+            return jsonify({
+                "success": False,
+                "error": "No valid fields to update."
+            }), 400
+
+        query = f"UPDATE projects SET {', '.join(update_fields)} WHERE project_id = :project_id"
+        
+        db.session.execute(text(query), params)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Project ID:{project_id} updated successfully.",
+            "data": {
+                "project_id": project_id,
+                **data
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
 
 # ----------
 # Name: Retrieve Project by ID
