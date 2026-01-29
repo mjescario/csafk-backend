@@ -15,4 +15,4 @@ jobs:
           token: ${{ secrets.PARENT_REPO_PAT }}
           repository: KruegerSchool/citizen-science-app-for-kids
           event-type: subtree-sync
-          client-payload: '{"subtree": "admin_website", "ref": "${{ github.sha }}"}'
+          client-payload: '{"subtree": "backend", "ref": "${{ github.sha }}"}'
