@@ -1,0 +1,18 @@
+name: Notify Central Repository
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger subtree sync in central repo
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.PARENT_REPO_PAT }}
+          repository: KruegerSchool/citizen-science-app-for-kids
+          event-type: subtree-sync
+          client-payload: '{"subtree": "admin_website", "ref": "${{ github.sha }}"}'
