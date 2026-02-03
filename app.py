@@ -19,14 +19,18 @@ app = Flask(__name__)
 DB_PASSWORD = os.getenv("PASSWORD")
 DB_HOST = os.getenv("DB_HOST")
 DB_NAME = os.getenv("DB_NAME")
-DB_PORT = os.getenv("DB_PORT")
+DB_PORT = os.getenv("DB_PORT", "3306")
 
 # Configure SQLAlchemy (confirm if using Cloud SQL or TCP).
-if DB_HOST.startswith('/cloudsql/'):
+if DB_HOST and DB_HOST.startswith('/cloudsql/'):
+
+    # Set up Cloud SQL Proxy connection.
     app.config["SQLALCHEMY_DATABASE_URI"] = (
         f"mysql+mysqlconnector://root:{DB_PASSWORD}@/{DB_NAME}?unix_socket={DB_HOST}"
     )
 else:
+
+    # Set up TCP connection for local testing.
     app.config["SQLALCHEMY_DATABASE_URI"] = (
         f"mysql+mysqlconnector://root:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
@@ -103,7 +107,7 @@ def health_check():
 # ==========
 
 # ---------
-# Name: Create Project 
+# Name: Create Project
 # Method: POST
 # Endpoint: /projects
 # Description: Creates a new project.
