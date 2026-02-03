@@ -21,10 +21,15 @@ DB_HOST = os.getenv("DB_HOST")
 DB_NAME = os.getenv("DB_NAME")
 DB_PORT = os.getenv("DB_PORT")
 
-# Configure SQLAlchemy.
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    f"mysql+mysqlconnector://root:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
+# Configure SQLAlchemy (confirm if using Cloud SQL or TCP).
+if DB_HOST.startswith('/cloudsql/'):
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        f"mysql+mysqlconnector://root:{DB_PASSWORD}@/{DB_NAME}?unix_socket={DB_HOST}"
+    )
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        f"mysql+mysqlconnector://root:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Initialize database.
