@@ -30,10 +30,12 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # Initialize database.
 db = SQLAlchemy(app)
 
+
 # Root endpoint to test Flask is working.
 @app.route("/")
 def root():
     return "Flask is running!"
+
 
 # ==========
 # Helper Functions
@@ -53,6 +55,7 @@ def generate_random_project_code():
 
     return generated_code
 
+
 def unique_project_code_check(code):
     """
     Checks to see if a project code is unique/already exists in the DB.
@@ -63,6 +66,7 @@ def unique_project_code_check(code):
     )
     count = result.fetchone()[0]
     return count == 0
+
 
 # ==========
 # General Endpoints
@@ -87,6 +91,7 @@ def health_check():
     except Exception as e:
         db.session.rollback()
         return jsonify({"Connection Error": str(e)}), 500
+
 
 # ==========
 # Project Management Endpoints
@@ -146,7 +151,8 @@ def create_project():
     except Exception as e:
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
-    
+
+
 # ----------
 # Name: Update Project
 # Method: PUT
@@ -170,7 +176,7 @@ def update_project(project_id):
             text("SELECT project_id FROM projects WHERE project_id = :project_id"),
             {"project_id": project_id}
         )
-        
+
         if not result.fetchone():
             return jsonify({
                 "success": False,
@@ -181,15 +187,15 @@ def update_project(project_id):
         # Initialize update_fields and append updated fields.
         update_fields = []
         params = {"project_id": project_id}
-        
+
         if "project_title" in data:
             update_fields.append("project_title = :project_title")
             params["project_title"] = data["project_title"]
-        
+
         if "project_description" in data:
             update_fields.append("project_description = :project_description")
             params["project_description"] = data["project_description"]
-        
+
         if "project_instructions" in data:
             update_fields.append("project_instructions = :project_instructions")
             params["project_instructions"] = data["project_instructions"]
@@ -202,7 +208,7 @@ def update_project(project_id):
             }), 400
 
         query = f"UPDATE projects SET {', '.join(update_fields)} WHERE project_id = :project_id"
-        
+
         db.session.execute(text(query), params)
         db.session.commit()
 
@@ -218,6 +224,7 @@ def update_project(project_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
+
 
 # ----------
 # Name: Retrieve Project by ID
@@ -263,6 +270,7 @@ def get_project(project_id):
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
 
+
 # ----------
 # Name: Retrieve Projects by Teacher
 # Method: GET
@@ -305,6 +313,7 @@ def get_projects_by_teacher(teacher_id):
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
 
+
 # ----------
 # Name: Delete Project
 # Method: DELETE
@@ -338,6 +347,8 @@ def delete_project(project_id):
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
 
+
 if __name__ == "__main__":
-    print("Flask server started.")
-    app.run(debug=True, port=8000, host="0.0.0.0")
+    port = int(os.environ.get("PORT", 8000))
+    print(f"Flask server started on port {port}.")
+    app.run(debug=False, port=port, host="0.0.0.0")
