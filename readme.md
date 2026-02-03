@@ -2,6 +2,8 @@ Citizen Science App for Kids Backend Documentation
 
 Attached below are the current endpoints and how to utilize them in the frontend.
 
+Primary URL: https://csafk-277534145495.us-east4.run.app
+
 **Database Status**
 
 <blockquote>
@@ -19,7 +21,7 @@ JSON Request Requirements:
 CURL Example:
 
 ```
-curl http://localhost:8000/api/status
+curl https://csafk-277534145495.us-east4.run.app/api/status
 ```
 
 Success Response (200)
@@ -60,7 +62,7 @@ JSON Request Requirements:
 CURL Example:
 
 ```
-curl -X POST http://localhost:8000/api/projects \
+curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects \
   -H "Content-Type: application/json" \
   -d '{
     "teacher_id": 1,
@@ -122,7 +124,7 @@ JSON Request Requirements:
 CURL Example:
 
 ```
-curl http://localhost:8000/api/projects/1
+curl https://csafk-277534145495.us-east4.run.app/api/projects/1
 ```
 
 Success Response (200):
@@ -179,7 +181,7 @@ JSON Request Requirements:
 CURL Example:
 
 ```
-curl http://localhost:8000/api/users/1/projects
+curl https://csafk-277534145495.us-east4.run.app/api/users/1/projects
 ```
 
 Success Response (200):
@@ -235,7 +237,7 @@ JSON Request Requirements:
 CURL Example:
 
 ```
-curl -X DELETE http://localhost:8000/api/projects/1
+curl -X DELETE https://csafk-277534145495.us-east4.run.app/api/projects/1
 ```
 
 Success Response (200):
