@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from sqlalchemy import text
 import random
 import string
@@ -11,6 +12,12 @@ load_dotenv()
 
 # Initialize the Flask app.
 app = Flask(__name__)
+
+# CORS configuration.
+CORS(app, origins=[
+    "http://localhost:5173",
+    "https://citizen-science-app-for-kids-admin.vercel.app"
+])
 
 # ==========
 # Database Configuration
