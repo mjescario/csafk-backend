@@ -18,6 +18,7 @@ load_dotenv()
 # ==========
 
 LOCALHOST_URL = "http://localhost:5173"
+FE_PRODUCTION_URL = "https://citizen-science-app-for-kids-admin.vercel.app"
 API_PREFIX = "/api"
 
 # Error message constants.
@@ -58,7 +59,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 CORS(app,
      origins=[
          LOCALHOST_URL,
-         "https://citizen-science-app-for-kids-admin.vercel.app"
+         FE_PRODUCTION_URL
      ],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
@@ -219,7 +220,13 @@ def root():
 @app.route(f"{API_PREFIX}/login")
 def login():
     """Initiates Google OAuth flow."""
-    redirect_uri = url_for('authorize', _external=True, _scheme='https')
+    scheme = 'https' if os.getenv("FLASK_ENV") == "production" else 'http'
+    redirect_uri = url_for('authorize', _external=True, _scheme=scheme)
+
+    # Store the referrer to know where to redirect after auth
+    referrer = request.referrer or ''
+    session['login_referrer'] = referrer
+
     return google.authorize_redirect(redirect_uri)
 
 
@@ -247,8 +254,16 @@ def authorize():
                 'name': user_info.get('name', '')
             }
 
-            # Redirect to frontend with success.
-            frontend_url = os.getenv("FRONTEND_URL", LOCALHOST_URL)
+            # Added redirect logic.
+            referrer = session.pop('login_referrer', '')
+
+            if 'localhost' in referrer or '127.0.0.1' in referrer:
+                # Came from local frontend
+                frontend_url = LOCALHOST_URL
+            else:
+                # Came from production frontend or direct link
+                frontend_url = FE_PRODUCTION_URL
+
             return redirect(f"{frontend_url}/auth/success")
 
         return jsonify({
