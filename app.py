@@ -221,7 +221,7 @@ def authorize():
             }
 
             # Redirect to frontend with success.
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+            frontend_url = os.getenv("FRONTEND_URL", LOCALHOST_URL)
             return redirect(f"{frontend_url}/auth/success")
 
         return jsonify({
