@@ -219,7 +219,7 @@ def root():
 @app.route(f"{API_PREFIX}/login")
 def login():
     """Initiates Google OAuth flow."""
-    redirect_uri = url_for('authorize', _external=True)
+    redirect_uri = url_for('authorize', _external=True, _scheme='https')
     return google.authorize_redirect(redirect_uri)
 
 
