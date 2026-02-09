@@ -13,6 +13,37 @@ from datetime import timedelta
 # Load environment variables from .env file.
 load_dotenv()
 
+# ==========
+# Constants
+# ==========
+
+LOCALHOST_URL = "http://localhost:5173"
+API_PREFIX = "/api"
+
+# Error message constants.
+ERROR_NO_DATA = {"success": False, "error": "No data provided."}
+ERROR_AUTH_REQUIRED = {
+    "success": False,
+    "error": "Authentication required",
+    "message": "Please log in to access this resource."
+}
+ERROR_PROJECT_NOT_FOUND = {
+    "success": False,
+    "error": "Project not found."
+}
+ERROR_UNAUTHORIZED = {
+    "success": False,
+    "error": "Unauthorized."
+}
+ERROR_NO_FIELDS_TO_UPDATE = {
+    "success": False,
+    "error": "No valid fields to update."
+}
+
+# ==========
+# App Initialization
+# ==========
+
 # Initialize the Flask app.
 app = Flask(__name__)
 
@@ -26,7 +57,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 # CORS configuration.
 CORS(app,
      origins=[
-         "http://localhost:5173",
+         LOCALHOST_URL,
          "https://citizen-science-app-for-kids-admin.vercel.app"
      ],
      supports_credentials=True,
@@ -88,11 +119,7 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'teacher' not in session:
-            return jsonify({
-                "success": False,
-                "error": "Authentication required",
-                "message": "Please log in to access this resource."
-            }), 401
+            return jsonify(ERROR_AUTH_REQUIRED), 401
         return f(*args, **kwargs)
 
     return decorated_function
@@ -189,14 +216,14 @@ def root():
     return "Flask is running!"
 
 
-@app.route("/api/login")
+@app.route(f"{API_PREFIX}/login")
 def login():
     """Initiates Google OAuth flow."""
     redirect_uri = url_for('authorize', _external=True)
     return google.authorize_redirect(redirect_uri)
 
 
-@app.route("/api/authorize")
+@app.route(f"{API_PREFIX}/authorize")
 def authorize():
     """Callback endpoint for Google OAuth."""
     try:
@@ -236,7 +263,7 @@ def authorize():
         }), 500
 
 
-@app.route("/api/logout", methods=["POST"])
+@app.route(f"{API_PREFIX}/logout", methods=["POST"])
 def logout():
     """Logs out the current teacher"""
     session.pop('teacher', None)
@@ -246,7 +273,7 @@ def logout():
     }), 200
 
 
-@app.route("/api/me", methods=["GET"])
+@app.route(f"{API_PREFIX}/me", methods=["GET"])
 @login_required
 def get_current_teacher_info():
     """Returns current authenticated teacher info"""
@@ -260,7 +287,7 @@ def get_current_teacher_info():
 # General Endpoints
 # ==========
 
-@app.route("/api/status", methods=["GET"])
+@app.route(f"{API_PREFIX}/status", methods=["GET"])
 def health_check():
     """Test if database connection is active."""
     try:
@@ -278,7 +305,7 @@ def health_check():
 # Project Management Endpoints
 # ==========
 
-@app.route("/api/projects", methods=["POST"])
+@app.route(f"{API_PREFIX}/projects", methods=["POST"])
 @login_required
 def create_project():
     try:
@@ -286,14 +313,11 @@ def create_project():
         current_teacher = get_current_teacher()
 
         if not data:
-            return jsonify({
-                "success": False,
-                "error": "No data provided."
-            }), 400
+            return jsonify(ERROR_NO_DATA), 400
 
         project_code = generate_random_project_code()
 
-        # Use current teacher's ID
+        # Use current teacher's ID.
         teacher_id = current_teacher['teacher_id']
 
         result = db.session.execute(
@@ -332,7 +356,7 @@ def create_project():
         return jsonify({"Server Error": str(e)}), 500
 
 
-@app.route("/api/projects/<int:project_id>", methods=["PUT"])
+@app.route(f"{API_PREFIX}/projects/<int:project_id>", methods=["PUT"])
 @login_required
 def update_project(project_id):
     try:
@@ -340,10 +364,7 @@ def update_project(project_id):
         current_teacher = get_current_teacher()
 
         if not data:
-            return jsonify({
-                "success": False,
-                "error": "No data provided."
-            }), 400
+            return jsonify(ERROR_NO_DATA), 400
 
         # Check if project exists and belongs to current teacher.
         result = db.session.execute(
@@ -354,42 +375,29 @@ def update_project(project_id):
         project = result.fetchone()
 
         if not project:
-            return jsonify({
-                "success": False,
-                "error": "Project not found",
-                "message": f"No project with ID {project_id} exists."
-            }), 404
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
 
         # Verify ownership.
         if project[0] != current_teacher['teacher_id']:
-            return jsonify({
-                "success": False,
-                "error": "Unauthorized",
-                "message": "You don't have permission to update this project."
-            }), 403
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to update this project."
+            return jsonify(error_response), 403
 
-        # Initialize update_fields and append updated fields.
+        # Initialize update_fields and params using a loop over approved fields.
+        project_fields = ["project_title", "project_description", "project_instructions"]
         update_fields = []
         params = {"project_id": project_id}
 
-        if "project_title" in data:
-            update_fields.append("project_title = :project_title")
-            params["project_title"] = data["project_title"]
-
-        if "project_description" in data:
-            update_fields.append("project_description = :project_description")
-            params["project_description"] = data["project_description"]
-
-        if "project_instructions" in data:
-            update_fields.append("project_instructions = :project_instructions")
-            params["project_instructions"] = data["project_instructions"]
+        for field in data:
+            if field in project_fields:
+                update_fields.append(f"{field} = :{field}")
+                params[field] = data[field]
 
         # Error Response if not valid.
         if not update_fields:
-            return jsonify({
-                "success": False,
-                "error": "No valid fields to update."
-            }), 400
+            return jsonify(ERROR_NO_FIELDS_TO_UPDATE), 400
 
         query = f"UPDATE projects SET {', '.join(update_fields)} WHERE project_id = :project_id"
 
@@ -410,7 +418,7 @@ def update_project(project_id):
         return jsonify({"Server Error": str(e)}), 500
 
 
-@app.route("/api/projects/<int:project_id>", methods=["GET"])
+@app.route(f"{API_PREFIX}/projects/<int:project_id>", methods=["GET"])
 @login_required
 def get_project(project_id):
     try:
@@ -428,19 +436,15 @@ def get_project(project_id):
         project = result.fetchone()
 
         if not project:
-            return jsonify({
-                "success": False,
-                "error": "Project not found.",
-                "message": f"No project with ID #{project_id} exists."
-            }), 404
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID #{project_id} exists."
+            return jsonify(error_response), 404
 
         # Verify ownership.
         if project[1] != current_teacher['teacher_id']:
-            return jsonify({
-                "success": False,
-                "error": "Unauthorized",
-                "message": "You don't have permission to view this project."
-            }), 403
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to view this project."
+            return jsonify(error_response), 403
 
         return jsonify({
             "success": True,
@@ -459,7 +463,7 @@ def get_project(project_id):
         return jsonify({"Server Error": str(e)}), 500
 
 
-@app.route("/api/users/<int:teacher_id>/projects", methods=["GET"])
+@app.route(f"{API_PREFIX}/users/<int:teacher_id>/projects", methods=["GET"])
 @login_required
 def get_projects_by_teacher(teacher_id):
     try:
@@ -467,11 +471,9 @@ def get_projects_by_teacher(teacher_id):
 
         # Restrict teachers into viewing their own projects.
         if teacher_id != current_teacher['teacher_id']:
-            return jsonify({
-                "success": False,
-                "error": "Unauthorized",
-                "message": "You can only view your own projects."
-            }), 403
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You can only view your own projects."
+            return jsonify(error_response), 403
 
         result = db.session.execute(
             text("""
@@ -506,7 +508,7 @@ def get_projects_by_teacher(teacher_id):
         return jsonify({"Server Error": str(e)}), 500
 
 
-@app.route("/api/projects/<int:project_id>", methods=["DELETE"])
+@app.route(f"{API_PREFIX}/projects/<int:project_id>", methods=["DELETE"])
 @login_required
 def delete_project(project_id):
     try:
@@ -521,19 +523,15 @@ def delete_project(project_id):
         project = result.fetchone()
 
         if not project:
-            return jsonify({
-                "success": False,
-                "error": "Project not found",
-                "message": f"No project with ID {project_id} exists."
-            }), 404
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
 
         # Verify ownership.
         if project[0] != current_teacher['teacher_id']:
-            return jsonify({
-                "success": False,
-                "error": "Unauthorized",
-                "message": "You don't have permission to delete this project."
-            }), 403
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to delete this project."
+            return jsonify(error_response), 403
 
         db.session.execute(
             text("DELETE FROM projects WHERE project_id = :project_id"),
@@ -556,4 +554,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"Flask server started on port {port}.")
     app.run(debug=False, port=port, host="0.0.0.0")
-    
