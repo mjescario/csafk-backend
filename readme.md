@@ -269,6 +269,86 @@ Failure Response (500 - Server Error):
 
 </blockquote>
 
+**Add Field to Project**
+
+<blockquote>
+
+_Add a field (data collection point) to a project._
+
+Endpoint:
+
+'POST /api/projects/{project_id}/fields'
+
+JSON Request Requirements:
+
+* field_name (required)
+* field_type (required - types: text, textarea, number, date, time, checkbox, dropdown, radio)
+* field_label - label that is displayed on the page.
+* field_options - JSON string for multiple choice (checkbox, dropdown, radio) options
+* is_required - Boolean value (default is false) that determines if a field is required.
+
+CURL Example:
+
+```
+curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects/23/fields \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=YOUR_SESSION_COOKIE" \
+  -d '{
+    "field_name": "bird_species",
+    "field_label": "Bird Species",
+    "field_type": "text",
+    "is_required": true
+  }'
+```
+
+Success Response (201):
+
+```
+{
+  "success": true,
+  "message": "Field added successfully!",
+  "data": {
+    "field_id": 15,
+    "project_id": 23,
+    "field_name": "bird_species",
+    "field_label": "Bird Species",
+    "field_type": "text",
+    "field_options": null,
+    "field_required": true
+  }
+}
+```
+
+Failure Response (400 - Missing Fields):
+
+```
+{
+  "success": false,
+  "error": "field_name and field_type are required."
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized.",
+  "message": "You don't have permission to add fields to this project."
+}
+```
+
+Failure Response (404 - Project Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with ID 99 exists."
+}
+```
+</blockquote>
+
 **Endpoint Title**
 
 <blockquote>
