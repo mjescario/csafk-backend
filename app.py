@@ -224,7 +224,9 @@ def root():
 
 @app.route(f"{API_PREFIX}/login")
 def login():
-    """Initiates Google OAuth flow."""
+    """
+    Initiates Google OAuth flow.
+    """
     scheme = 'https' if os.getenv("FLASK_ENV") == "production" else 'http'
     redirect_uri = url_for('authorize', _external=True, _scheme=scheme)
 
@@ -237,7 +239,9 @@ def login():
 
 @app.route(f"{API_PREFIX}/authorize")
 def authorize():
-    """Callback endpoint for Google OAuth."""
+    """
+    Callback endpoint for Google OAuth.
+    """
     try:
         token = google.authorize_access_token()
         user_info = token.get('userinfo')
@@ -285,7 +289,9 @@ def authorize():
 
 @app.route(f"{API_PREFIX}/logout", methods=["POST"])
 def logout():
-    """Logs out the current teacher"""
+    """
+    Logs out the current teacher.
+    """
     session.pop('teacher', None)
     return jsonify({
         "success": True,
@@ -296,7 +302,9 @@ def logout():
 @app.route(f"{API_PREFIX}/me", methods=["GET"])
 @login_required
 def get_current_teacher_info():
-    """Returns current authenticated teacher info"""
+    """
+    Returns current authenticated teacher info.
+    """
     return jsonify({
         "success": True,
         "data": session['teacher']
@@ -309,7 +317,9 @@ def get_current_teacher_info():
 
 @app.route(f"{API_PREFIX}/status", methods=["GET"])
 def health_check():
-    """Test if database connection is active."""
+    """
+    Test if database connection is active.
+    """
     try:
         db.session.execute(text("SELECT 1"))
         return jsonify({
@@ -328,6 +338,9 @@ def health_check():
 @app.route(f"{API_PREFIX}/projects", methods=["POST"])
 @login_required
 def create_project():
+    """
+    Creates a new project.
+    """
     try:
         data = request.get_json()
         current_teacher = get_current_teacher()
@@ -335,10 +348,22 @@ def create_project():
         if not data:
             return jsonify(ERROR_NO_DATA), 400
 
+        # Validate required field
+        if not data.get("project_title"):
+            return jsonify({
+                "success": False,
+                "error": "project_title is required."
+            }), 400
+
         project_code = generate_random_project_code()
 
         # Use current teacher's ID.
         teacher_id = current_teacher['teacher_id']
+
+        # Set defaults for optional fields to avoid NULL values
+        project_title = data.get("project_title")
+        project_description = data.get("project_description") or ""
+        project_instructions = data.get("project_instructions") or ""
 
         result = db.session.execute(
             text("""
@@ -350,9 +375,9 @@ def create_project():
             {
                 "teacher_id": teacher_id,
                 "project_code": project_code,
-                "project_title": data.get("project_title"),
-                "project_description": data.get("project_description"),
-                "project_instructions": data.get("project_instructions"),
+                "project_title": project_title,
+                "project_description": project_description,
+                "project_instructions": project_instructions,
             },
         )
 
@@ -365,9 +390,9 @@ def create_project():
             "data": {
                 "project_id": project_id,
                 "project_code": project_code,
-                "project_title": data.get("project_title"),
-                "project_description": data.get("project_description"),
-                "project_instructions": data.get("project_instructions"),
+                "project_title": project_title,
+                "project_description": project_description,
+                "project_instructions": project_instructions,
             },
         }), 201
 
@@ -379,6 +404,9 @@ def create_project():
 @app.route(f"{API_PREFIX}/projects/<int:project_id>", methods=["PUT"])
 @login_required
 def update_project(project_id):
+    """
+    Updates a current project.
+    """
     try:
         data = request.get_json()
         current_teacher = get_current_teacher()
@@ -441,6 +469,9 @@ def update_project(project_id):
 @app.route(f"{API_PREFIX}/projects/<int:project_id>", methods=["GET"])
 @login_required
 def get_project(project_id):
+    """
+    Retrieves a project.
+    """
     try:
         current_teacher = get_current_teacher()
 
@@ -486,6 +517,9 @@ def get_project(project_id):
 @app.route(f"{API_PREFIX}/users/<int:teacher_id>/projects", methods=["GET"])
 @login_required
 def get_projects_by_teacher(teacher_id):
+    """
+    Retrieve list of projects by teacher_id.
+    """
     try:
         current_teacher = get_current_teacher()
 
@@ -531,6 +565,9 @@ def get_projects_by_teacher(teacher_id):
 @app.route(f"{API_PREFIX}/projects/<int:project_id>", methods=["DELETE"])
 @login_required
 def delete_project(project_id):
+    """
+    Deletes a project. Must be logged in and authorized as project creator.
+    """
     try:
         current_teacher = get_current_teacher()
 
@@ -563,6 +600,318 @@ def delete_project(project_id):
         return jsonify({
             "success": True,
             "message": f"Project ID:{project_id} deleted successfully."
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+# ==========
+# Field Management Endpoints
+# ==========
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/fields", methods=["POST"])
+@login_required
+def add_field(project_id):
+    """
+    Add a new field to a project.
+    """
+    try:
+        data = request.get_json()
+        current_teacher = get_current_teacher()
+
+        if not data:
+            return jsonify(ERROR_NO_DATA), 400
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to add fields to this project."
+            return jsonify(error_response), 403
+
+        # Validate required fields.
+        if not data.get("field_name") or not data.get("field_type"):
+            return jsonify({
+                "success": False,
+                "error": "field_name and field_type are required."
+            }), 400
+
+        # Set defaults for optional fields
+        field_label = data.get("field_label") or data.get("field_name")
+        field_required = data.get("is_required", False) or data.get("field_required", False)
+
+        # Insert the field.
+        result = db.session.execute(
+            text("""
+                INSERT INTO project_fields
+                    (project_id, field_name, field_label, field_type, field_options, field_required)
+                VALUES
+                    (:project_id, :field_name, :field_label, :field_type, :field_options, :field_required)
+            """),
+            {
+                "project_id": project_id,
+                "field_name": data.get("field_name"),
+                "field_label": field_label,
+                "field_type": data.get("field_type"),
+                "field_options": data.get("field_options"),
+                "field_required": field_required,
+            },
+        )
+
+        field_id = result.lastrowid
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Field added successfully!",
+            "data": {
+                "field_id": field_id,
+                "project_id": project_id,
+                "field_name": data.get("field_name"),
+                "field_label": field_label,
+                "field_type": data.get("field_type"),
+                "field_options": data.get("field_options"),
+                "field_required": field_required,
+            },
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/fields", methods=["GET"])
+@login_required
+def get_fields(project_id):
+    """
+    Retrieve all fields for a project.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to view fields for this project."
+            return jsonify(error_response), 403
+
+        # Get all fields for the project.
+        result = db.session.execute(
+            text("""
+                SELECT field_id, project_id, field_name, field_label, field_type, field_options, field_required
+                FROM project_fields
+                WHERE project_id = :project_id
+                ORDER BY field_id ASC
+            """),
+            {"project_id": project_id},
+        )
+
+        fields = result.fetchall()
+
+        fields_list = []
+        for f in fields:
+            fields_list.append({
+                "field_id": f[0],
+                "project_id": f[1],
+                "field_name": f[2],
+                "field_label": f[3],
+                "field_type": f[4],
+                "field_options": f[5],
+                "field_required": bool(f[6]),
+            })
+
+        return jsonify({
+            "success": True,
+            "data": fields_list
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/fields/<int:field_id>", methods=["PUT"])
+@login_required
+def update_field(project_id, field_id):
+    """
+    Update a field.
+    """
+    try:
+        data = request.get_json()
+        current_teacher = get_current_teacher()
+
+        if not data:
+            return jsonify(ERROR_NO_DATA), 400
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to update fields for this project."
+            return jsonify(error_response), 403
+
+        # Check if field exists and belongs to this project.
+        result = db.session.execute(
+            text("SELECT project_id FROM project_fields WHERE field_id = :field_id"),
+            {"field_id": field_id}
+        )
+
+        field = result.fetchone()
+
+        if not field:
+            return jsonify({
+                "success": False,
+                "error": "Field not found.",
+                "message": f"No field with ID {field_id} exists."
+            }), 404
+
+        if field[0] != project_id:
+            return jsonify({
+                "success": False,
+                "error": "Field does not belong to this project."
+            }), 400
+
+        # Initialize update_fields and params using a loop over approved fields.
+        # Map API field names to database column names
+        field_mapping = {
+            "field_name": "field_name",
+            "field_label": "field_label",
+            "field_type": "field_type",
+            "field_options": "field_options",
+            "is_required": "field_required",
+            "field_required": "field_required"
+        }
+
+        update_fields = []
+        params = {"field_id": field_id}
+
+        for api_field, db_field in field_mapping.items():
+            if api_field in data:
+                update_fields.append(f"{db_field} = :{db_field}")
+                params[db_field] = data[api_field]
+
+        # Error Response if not valid.
+        if not update_fields:
+            return jsonify(ERROR_NO_FIELDS_TO_UPDATE), 400
+
+        query = f"UPDATE project_fields SET {', '.join(update_fields)} WHERE field_id = :field_id"
+
+        db.session.execute(text(query), params)
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Field ID:{field_id} updated successfully.",
+            "data": {
+                "field_id": field_id,
+                "project_id": project_id,
+                **data
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/fields/<int:field_id>", methods=["DELETE"])
+@login_required
+def delete_field(project_id, field_id):
+    """
+    Delete a field.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to delete fields for this project."
+            return jsonify(error_response), 403
+
+        # Check if field exists and belongs to this project.
+        result = db.session.execute(
+            text("SELECT project_id FROM project_fields WHERE field_id = :field_id"),
+            {"field_id": field_id}
+        )
+
+        field = result.fetchone()
+
+        if not field:
+            return jsonify({
+                "success": False,
+                "error": "Field not found.",
+                "message": f"No field with ID {field_id} exists."
+            }), 404
+
+        if field[0] != project_id:
+            return jsonify({
+                "success": False,
+                "error": "Field does not belong to this project."
+            }), 400
+
+        db.session.execute(
+            text("DELETE FROM project_fields WHERE field_id = :field_id"),
+            {"field_id": field_id},
+        )
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Field ID:{field_id} deleted successfully."
         }), 200
 
     except Exception as e:
