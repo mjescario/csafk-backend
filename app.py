@@ -50,9 +50,14 @@ app = Flask(__name__)
 
 # Secret key setup for session management.
 app.secret_key = os.getenv("SECRET_KEY", os.urandom(24))
-app.config['SESSION_COOKIE_SECURE'] = os.getenv("FLASK_ENV") == "production"
+
+# Detect production environment.
+production_check = os.getenv("FLASK_ENV") == "production" or os.getenv("K_SERVICE") is not None
+
+# Set cookies.
+app.config['SESSION_COOKIE_SECURE'] = production_check
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SAMESITE'] = 'None' if production_check else 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 # CORS configuration.
