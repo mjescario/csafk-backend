@@ -636,6 +636,80 @@ def delete_project(project_id):
 
 
 # ==========
+# Student Access Endpoints
+# ==========
+
+@app.route(f"{API_PREFIX}/student/project/<project_code>", methods=["GET"])
+def get_project_by_code(project_code):
+    """
+    Retrieves public project information for students using project code.
+    Does not require authentication - students access via project code.
+    Returns limited project info and associated fields for the observation form.
+    """
+    try:
+        # Get project basic info.
+        result = db.session.execute(
+            text("""
+                SELECT project_id, project_code, project_title, project_description, project_instructions
+                FROM projects
+                WHERE project_code = :project_code
+            """),
+            {"project_code": project_code},
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": "Project not found.",
+                "message": f"No project with code '{project_code}' exists."
+            }), 404
+
+        project_id = project[0]
+
+        # Get all fields for this project.
+        fields_result = db.session.execute(
+            text("""
+                SELECT field_id, field_name, field_label, field_type, field_options, field_required
+                FROM project_fields
+                WHERE project_id = :project_id
+                ORDER BY field_id ASC
+            """),
+            {"project_id": project_id},
+        )
+
+        fields = fields_result.fetchall()
+
+        fields_list = []
+        for f in fields:
+            fields_list.append({
+                "field_id": f[0],
+                "field_name": f[1],
+                "field_label": f[2],
+                "field_type": f[3],
+                "field_options": f[4],
+                "field_required": bool(f[5]),
+            })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "project_id": project[0],
+                "project_code": project[1],
+                "project_title": project[2],
+                "project_description": project[3],
+                "project_instructions": project[4],
+                "fields": fields_list
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+# ==========
 # Field Management Endpoints
 # ==========
 
@@ -952,23 +1026,22 @@ def delete_field(project_id, field_id):
 # ==========
 
 @app.route(f"{API_PREFIX}/projects/<int:project_id>/observations", methods=["POST"])
-@login_required
 def submit_observation(project_id):
     """
-    Submit a new observation for a project.
+    Submit a new observation for a project using project_id.
+    No authentication required - accessible by both teachers and students.
     Creates an observation record and associated observation_data records.
     Stores values in appropriate typed columns based on field type.
     """
     try:
         data = request.get_json()
-        current_teacher = get_current_teacher()
 
         if not data:
             return jsonify(ERROR_NO_DATA), 400
 
-        # Check if project exists and belongs to current teacher.
+        # Check if project exists.
         result = db.session.execute(
-            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            text("SELECT project_id FROM projects WHERE project_id = :project_id"),
             {"project_id": project_id}
         )
 
@@ -978,12 +1051,6 @@ def submit_observation(project_id):
             error_response = ERROR_PROJECT_NOT_FOUND.copy()
             error_response["message"] = f"No project with ID {project_id} exists."
             return jsonify(error_response), 404
-
-        # Verify ownership.
-        if project[0] != current_teacher['teacher_id']:
-            error_response = ERROR_UNAUTHORIZED.copy()
-            error_response["message"] = "You don't have permission to add observations to this project."
-            return jsonify(error_response), 403
 
         # Extract student_name and field_data from request.
         student_name = data.get("student_name", "")
@@ -1099,7 +1166,7 @@ def submit_observation(project_id):
                         "field_id": field_id,
                         "field_value": field_value_str,
                         "value_text": value_text,
-                        "value_number": value_number,
+                "value_number": value_number,
                         "value_date": value_date,
                         "value_boolean": value_boolean
                     }
@@ -1128,17 +1195,15 @@ def submit_observation(project_id):
 
 
 @app.route(f"{API_PREFIX}/projects/<int:project_id>/observations", methods=["GET"])
-@login_required
 def get_all_observations(project_id):
     """
     Retrieve all observations for a project with their associated data.
+    No authentication required - accessible by both teachers and students.
     """
     try:
-        current_teacher = get_current_teacher()
-
-        # Check if project exists and belongs to current teacher.
+        # Check if project exists.
         result = db.session.execute(
-            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            text("SELECT project_id FROM projects WHERE project_id = :project_id"),
             {"project_id": project_id}
         )
 
@@ -1148,12 +1213,6 @@ def get_all_observations(project_id):
             error_response = ERROR_PROJECT_NOT_FOUND.copy()
             error_response["message"] = f"No project with ID {project_id} exists."
             return jsonify(error_response), 404
-
-        # Verify ownership.
-        if project[0] != current_teacher['teacher_id']:
-            error_response = ERROR_UNAUTHORIZED.copy()
-            error_response["message"] = "You don't have permission to view observations for this project."
-            return jsonify(error_response), 403
 
         # Get all observations for the project.
         result = db.session.execute(
@@ -1212,17 +1271,15 @@ def get_all_observations(project_id):
 
 
 @app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>", methods=["GET"])
-@login_required
 def get_observation(project_id, observation_id):
     """
     Get a specific observation with its data.
+    No authentication required - accessible by both teachers and students.
     """
     try:
-        current_teacher = get_current_teacher()
-
-        # Check if project exists and belongs to current teacher.
+        # Check if project exists.
         result = db.session.execute(
-            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            text("SELECT project_id FROM projects WHERE project_id = :project_id"),
             {"project_id": project_id}
         )
 
@@ -1232,12 +1289,6 @@ def get_observation(project_id, observation_id):
             error_response = ERROR_PROJECT_NOT_FOUND.copy()
             error_response["message"] = f"No project with ID {project_id} exists."
             return jsonify(error_response), 404
-
-        # Verify ownership.
-        if project[0] != current_teacher['teacher_id']:
-            error_response = ERROR_UNAUTHORIZED.copy()
-            error_response["message"] = "You don't have permission to view observations for this project."
-            return jsonify(error_response), 403
 
         # Get the observation.
         result = db.session.execute(
@@ -1296,7 +1347,6 @@ def get_observation(project_id, observation_id):
 
 
 @app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>", methods=["PUT"])
-@login_required
 def update_observation(project_id, observation_id):
     """
     Update an observation and its field data.
