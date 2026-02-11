@@ -349,6 +349,214 @@ Failure Response (404 - Project Not Found):
 ```
 </blockquote>
 
+**Get All Fields for a Project**
+
+<blockquote>
+
+_Retrieves all fields for a specific project._
+
+Endpoint:
+
+'GET /api/projects/{project_id}/fields'
+
+JSON Request Requirements:
+
+* project_id
+
+CURL Example:
+
+```
+curl https://csafk-277534145495.us-east4.run.app/api/projects/23/fields \
+  -H "Cookie: session=SESSION_COOKIE"
+```
+Note: When testing, must retrieve cookie value. Recommend using Chrome's Dev Mode to retrieve value.
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "data": [
+    {
+      "field_id": 15,
+      "project_id": 23,
+      "field_name": "bird_species",
+      "field_label": "Bird Species",
+      "field_type": "text",
+      "field_options": null,
+      "field_required": true
+    },
+    {
+      "field_id": 16,
+      "project_id": 23,
+      "field_name": "weather",
+      "field_label": "Weather Condition",
+      "field_type": "dropdown",
+      "field_options": "[\"Sunny\", \"Cloudy\", \"Rainy\", \"Snowy\"]",
+      "field_required": false
+    }
+  ]
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized.",
+  "message": "You don't have permission to view fields for this project."
+}
+```
+
+Failure Response (404 - Project Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with ID 99 exists."
+}
+```
+
+</blockquote>
+
+**Update Field**
+
+<blockquote>
+
+_Updates an existing field in a project._
+
+Endpoint:
+
+'PUT /api/projects/{project_id}/fields/{field_id}'
+
+JSON Request Requirements:
+
+* project_id
+* field_id
+* fields to be updated (see types in "Add Field to a Project")
+
+CURL Example:
+
+```
+curl -X PUT https://csafk-277534145495.us-east4.run.app/api/projects/23/fields/15 \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=SESSION_COOKIE" \
+  -d '{
+    "field_label": "Bird Species (Common Name)",
+    "is_required": false
+  }'
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "message": "Field ID:15 updated successfully.",
+  "data": {
+    "field_id": 15,
+    "project_id": 23,
+    "field_label": "Bird Species (Common Name)",
+    "is_required": false
+  }
+}
+```
+
+Failure Response (400 - Incorrect Project Field):
+
+```
+{
+  "success": false,
+  "error": "Field does not belong to this project."
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized.",
+  "message": "You don't have permission to update fields for this project."
+}
+```
+
+Failure Response (404 - Field Not Found:
+
+```
+{
+  "success": false,
+  "error": "Field not found.",
+  "message": "No field with ID 99 exists."
+}
+```
+
+</blockquote>
+
+**Delete Field**
+
+<blockquote>
+
+_Deletes a field from a project._
+
+Endpoint:
+
+'DELETE /api/projects/{project_id}/fields/{field_id}'
+
+JSON Request Requirements:
+
+* project_id
+* field_id
+
+CURL Example:
+
+```
+curl -X DELETE https://csafk-277534145495.us-east4.run.app/api/projects/23/fields/15 \
+  -H "Cookie: session=SESSION_COOKIE"
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "message": "Field ID:15 deleted successfully."
+}
+```
+
+Failure Response (400 - Incorrect Project Field):
+
+```
+{
+  "success": false,
+  "error": "Field does not belong to this project."
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized.",
+  "message": "You don't have permission to delete fields for this project."
+}
+```
+
+Failure Response (404 - Field Not Found):
+
+```
+{
+  "success": false,
+  "error": "Field not found.",
+  "message": "No field with ID 99 exists."
+}
+```
+
+</blockquote>
+
 **Endpoint Title**
 
 <blockquote>
