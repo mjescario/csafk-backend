@@ -64,7 +64,10 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 CORS(app,
      origins=[
          LOCALHOST_URL,
-         FE_PRODUCTION_URL
+         FE_PRODUCTION_URL,
+         "https://www.google.com",
+         "https://google.com",
+         "NULL"
      ],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
@@ -567,6 +570,7 @@ def get_projects_by_teacher(teacher_id):
 def delete_project(project_id):
     """
     Deletes a project. Must be logged in and authorized as project creator.
+    Also deletes all associated observations, observation_data, and fields.
     """
     try:
         current_teacher = get_current_teacher()
@@ -590,9 +594,33 @@ def delete_project(project_id):
             error_response["message"] = "You don't have permission to delete this project."
             return jsonify(error_response), 403
 
+        # Delete observation_data for all observations in this project.
+        db.session.execute(
+            text("""
+                DELETE FROM observation_data 
+                WHERE observation_id IN (
+                    SELECT observation_id FROM observations WHERE project_id = :project_id
+                )
+            """),
+            {"project_id": project_id}
+        )
+
+        # Delete observations for this project.
+        db.session.execute(
+            text("DELETE FROM observations WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        # Delete fields for this project.
+        db.session.execute(
+            text("DELETE FROM project_fields WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        # Finally delete the project.
         db.session.execute(
             text("DELETE FROM projects WHERE project_id = :project_id"),
-            {"project_id": project_id},
+            {"project_id": project_id}
         )
 
         db.session.commit()
@@ -912,6 +940,640 @@ def delete_field(project_id, field_id):
         return jsonify({
             "success": True,
             "message": f"Field ID:{field_id} deleted successfully."
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+# ==========
+# Observation Management Endpoints
+# ==========
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations", methods=["POST"])
+@login_required
+def submit_observation(project_id):
+    """
+    Submit a new observation for a project.
+    Creates an observation record and associated observation_data records.
+    Stores values in appropriate typed columns based on field type.
+    """
+    try:
+        data = request.get_json()
+        current_teacher = get_current_teacher()
+
+        if not data:
+            return jsonify(ERROR_NO_DATA), 400
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to add observations to this project."
+            return jsonify(error_response), 403
+
+        # Extract student_name and field_data from request.
+        student_name = data.get("student_name", "")
+        field_data = data.get("field_data", {})
+
+        if not isinstance(field_data, dict):
+            return jsonify({
+                "success": False,
+                "error": "field_data must be an object with field_id as keys."
+            }), 400
+
+        # Create the observation record.
+        result = db.session.execute(
+            text("""
+                INSERT INTO observations (project_id, student_name)
+                VALUES (:project_id, :student_name)
+            """),
+            {
+                "project_id": project_id,
+                "student_name": student_name
+            }
+        )
+
+        observation_id = result.lastrowid
+
+        # Insert observation_data for each field.
+        observation_data_list = []
+        for field_id_str, field_value in field_data.items():
+            try:
+                field_id = int(field_id_str)
+            except ValueError:
+                continue
+
+            # Get field info to determine type.
+            field_check = db.session.execute(
+                text("""
+                    SELECT field_id, field_type 
+                    FROM project_fields 
+                    WHERE field_id = :field_id AND project_id = :project_id
+                """),
+                {"field_id": field_id, "project_id": project_id}
+            )
+
+            field_info = field_check.fetchone()
+
+            if field_info:
+                field_type = field_info[1]
+
+                # Determine which column to use based on field type.
+                value_text = None
+                value_number = None
+                value_date = None
+                value_boolean = None
+
+                # Map field types to storage columns.
+                numeric_types = ['number']
+                date_types = ['date']
+                boolean_types = ['checkbox']
+                multiselect_types = ['multiselect']
+                text_types = ['text', 'textarea', 'radio', 'time']
+
+                if field_type in numeric_types:
+                    try:
+                        value_number = float(field_value) if field_value not in [None, ""] else None
+                    except (ValueError, TypeError):
+                        value_number = None
+
+                elif field_type in date_types:
+                    try:
+                        # Validate date format.
+                        from datetime import datetime
+                        if field_value:
+                            datetime.strptime(str(field_value), "%Y-%m-%d")
+                            value_date = str(field_value)
+                    except (ValueError, TypeError):
+                        value_date = None
+
+                elif field_type in boolean_types:
+                    # Convert to boolean.
+                    value_boolean = str(field_value).lower() in ['true', '1', 'yes', 'on'] if field_value else False
+
+                elif field_type in multiselect_types:
+                    # Store as JSON array.
+                    import json
+                    if isinstance(field_value, list):
+                        value_text = json.dumps(field_value)
+                    elif isinstance(field_value, str):
+                        # If already JSON string, validate and store.
+                        try:
+                            json.loads(field_value)
+                            value_text = field_value
+                        except:
+                            # If comma-separated, convert to JSON array.
+                            value_text = json.dumps([v.strip() for v in field_value.split(',')])
+                    else:
+                        value_text = json.dumps([])
+
+                else:
+                    value_text = str(field_value) if field_value is not None else ""
+
+                # Store in field_value for backward compatibility.
+                field_value_str = str(field_value) if field_value is not None else ""
+
+                db.session.execute(
+                    text("""
+                        INSERT INTO observation_data 
+                            (observation_id, field_id, field_value, value_text, value_number, value_date, value_boolean)
+                        VALUES 
+                            (:observation_id, :field_id, :field_value, :value_text, :value_number, :value_date, :value_boolean)
+                    """),
+                    {
+                        "observation_id": observation_id,
+                        "field_id": field_id,
+                        "field_value": field_value_str,
+                        "value_text": value_text,
+                        "value_number": value_number,
+                        "value_date": value_date,
+                        "value_boolean": value_boolean
+                    }
+                )
+                observation_data_list.append({
+                    "field_id": field_id,
+                    "field_value": field_value_str
+                })
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Observation submitted successfully!",
+            "data": {
+                "observation_id": observation_id,
+                "project_id": project_id,
+                "student_name": student_name,
+                "field_data": observation_data_list
+            }
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations", methods=["GET"])
+@login_required
+def get_all_observations(project_id):
+    """
+    Retrieve all observations for a project with their associated data.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to view observations for this project."
+            return jsonify(error_response), 403
+
+        # Get all observations for the project.
+        result = db.session.execute(
+            text("""
+                SELECT observation_id, project_id, student_name
+                FROM observations
+                WHERE project_id = :project_id
+                ORDER BY observation_id DESC
+            """),
+            {"project_id": project_id}
+        )
+
+        observations = result.fetchall()
+
+        observations_list = []
+        for obs in observations:
+            observation_id = obs[0]
+
+            # Get observation_data for this observation.
+            data_result = db.session.execute(
+                text("""
+                    SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label
+                    FROM observation_data od
+                    JOIN project_fields pf ON od.field_id = pf.field_id
+                    WHERE od.observation_id = :observation_id
+                    ORDER BY od.field_id ASC
+                """),
+                {"observation_id": observation_id}
+            )
+
+            field_data = []
+            for data in data_result.fetchall():
+                field_data.append({
+                    "data_id": data[0],
+                    "field_id": data[1],
+                    "field_value": data[2],
+                    "field_name": data[3],
+                    "field_label": data[4]
+                })
+
+            observations_list.append({
+                "observation_id": obs[0],
+                "project_id": obs[1],
+                "student_name": obs[2],
+                "field_data": field_data
+            })
+
+        return jsonify({
+            "success": True,
+            "data": observations_list
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>", methods=["GET"])
+@login_required
+def get_observation(project_id, observation_id):
+    """
+    Get a specific observation with its data.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to view observations for this project."
+            return jsonify(error_response), 403
+
+        # Get the observation.
+        result = db.session.execute(
+            text("""
+                SELECT observation_id, project_id, student_name
+                FROM observations
+                WHERE observation_id = :observation_id AND project_id = :project_id
+            """),
+            {"observation_id": observation_id, "project_id": project_id}
+        )
+
+        observation = result.fetchone()
+
+        if not observation:
+            return jsonify({
+                "success": False,
+                "error": "Observation not found.",
+                "message": f"No observation with ID {observation_id} exists for this project."
+            }), 404
+
+        # Get observation_data.
+        data_result = db.session.execute(
+            text("""
+                SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label
+                FROM observation_data od
+                JOIN project_fields pf ON od.field_id = pf.field_id
+                WHERE od.observation_id = :observation_id
+                ORDER BY od.field_id ASC
+            """),
+            {"observation_id": observation_id}
+        )
+
+        field_data = []
+        for data in data_result.fetchall():
+            field_data.append({
+                "data_id": data[0],
+                "field_id": data[1],
+                "field_value": data[2],
+                "field_name": data[3],
+                "field_label": data[4]
+            })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "observation_id": observation[0],
+                "project_id": observation[1],
+                "student_name": observation[2],
+                "field_data": field_data
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>", methods=["PUT"])
+@login_required
+def update_observation(project_id, observation_id):
+    """
+    Update an observation and its field data.
+    """
+    try:
+        data = request.get_json()
+        current_teacher = get_current_teacher()
+
+        if not data:
+            return jsonify(ERROR_NO_DATA), 400
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to update observations for this project."
+            return jsonify(error_response), 403
+
+        # Check if observation exists and belongs to this project.
+        result = db.session.execute(
+            text("SELECT project_id FROM observations WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+
+        observation = result.fetchone()
+
+        if not observation:
+            return jsonify({
+                "success": False,
+                "error": "Observation not found.",
+                "message": f"No observation with ID {observation_id} exists."
+            }), 404
+
+        if observation[0] != project_id:
+            return jsonify({
+                "success": False,
+                "error": "Observation does not belong to this project."
+            }), 400
+
+        # Update student_name if provided.
+        if "student_name" in data:
+            db.session.execute(
+                text("""
+                    UPDATE observations
+                    SET student_name = :student_name
+                    WHERE observation_id = :observation_id
+                """),
+                {
+                    "student_name": data.get("student_name", ""),
+                    "observation_id": observation_id
+                }
+            )
+
+        # Update field_data if provided.
+        if "field_data" in data:
+            field_data = data.get("field_data", {})
+
+            if not isinstance(field_data, dict):
+                return jsonify({
+                    "success": False,
+                    "error": "field_data must be an object with field_id as keys."
+                }), 400
+
+            for field_id_str, field_value in field_data.items():
+                try:
+                    field_id = int(field_id_str)
+                except ValueError:
+                    continue
+
+                # Get field info to determine type.
+                field_check = db.session.execute(
+                    text("""
+                        SELECT field_id, field_type 
+                        FROM project_fields 
+                        WHERE field_id = :field_id AND project_id = :project_id
+                    """),
+                    {"field_id": field_id, "project_id": project_id}
+                )
+
+                field_info = field_check.fetchone()
+
+                if field_info:
+                    field_type = field_info[1]
+
+                    # Determine which column to use based on field type.
+                    value_text = None
+                    value_number = None
+                    value_date = None
+                    value_boolean = None
+
+                    numeric_types = ['number']
+                    date_types = ['date']
+                    boolean_types = ['checkbox']
+                    multiselect_types = ['multiselect']
+                    text_types = ['text', 'textarea', 'radio', 'time']
+
+                    if field_type in numeric_types:
+                        try:
+                            value_number = float(field_value) if field_value not in [None, ""] else None
+                        except (ValueError, TypeError):
+                            value_number = None
+
+                    elif field_type in date_types:
+                        try:
+                            from datetime import datetime
+                            if field_value:
+                                datetime.strptime(str(field_value), "%Y-%m-%d")
+                                value_date = str(field_value)
+                        except (ValueError, TypeError):
+                            value_date = None
+
+                    elif field_type in boolean_types:
+                        value_boolean = str(field_value).lower() in ['true', '1', 'yes', 'on'] if field_value else False
+
+                    elif field_type in multiselect_types:
+                        import json
+                        if isinstance(field_value, list):
+                            value_text = json.dumps(field_value)
+                        elif isinstance(field_value, str):
+                            try:
+                                json.loads(field_value)
+                                value_text = field_value
+                            except:
+                                value_text = json.dumps([v.strip() for v in field_value.split(',')])
+                        else:
+                            value_text = json.dumps([])
+
+                    else:
+                        value_text = str(field_value) if field_value is not None else ""
+
+                    field_value_str = str(field_value) if field_value is not None else ""
+
+                    # Check if data entry exists.
+                    existing_data = db.session.execute(
+                        text("""
+                            SELECT data_id FROM observation_data
+                            WHERE observation_id = :observation_id AND field_id = :field_id
+                        """),
+                        {"observation_id": observation_id, "field_id": field_id}
+                    )
+
+                    if existing_data.fetchone():
+                        # Update existing observation.
+                        db.session.execute(
+                            text("""
+                                UPDATE observation_data
+                                SET field_value = :field_value,
+                                    value_text = :value_text,
+                                    value_number = :value_number,
+                                    value_date = :value_date,
+                                    value_boolean = :value_boolean
+                                WHERE observation_id = :observation_id AND field_id = :field_id
+                            """),
+                            {
+                                "field_value": field_value_str,
+                                "value_text": value_text,
+                                "value_number": value_number,
+                                "value_date": value_date,
+                                "value_boolean": value_boolean,
+                                "observation_id": observation_id,
+                                "field_id": field_id
+                            }
+                        )
+                    else:
+                        # Insert new observation.
+                        db.session.execute(
+                            text("""
+                                INSERT INTO observation_data 
+                                    (observation_id, field_id, field_value, value_text, value_number, value_date, value_boolean)
+                                VALUES 
+                                    (:observation_id, :field_id, :field_value, :value_text, :value_number, :value_date, :value_boolean)
+                            """),
+                            {
+                                "observation_id": observation_id,
+                                "field_id": field_id,
+                                "field_value": field_value_str,
+                                "value_text": value_text,
+                                "value_number": value_number,
+                                "value_date": value_date,
+                                "value_boolean": value_boolean
+                            }
+                        )
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Observation ID:{observation_id} updated successfully.",
+            "data": {
+                "observation_id": observation_id,
+                "project_id": project_id
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>", methods=["DELETE"])
+@login_required
+def delete_observation(project_id, observation_id):
+    """
+    Delete an observation and its associated data.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check if project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        # Verify ownership.
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to delete observations for this project."
+            return jsonify(error_response), 403
+
+        # Check if observation exists and belongs to this project.
+        result = db.session.execute(
+            text("SELECT project_id FROM observations WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+
+        observation = result.fetchone()
+
+        if not observation:
+            return jsonify({
+                "success": False,
+                "error": "Observation not found.",
+                "message": f"No observation with ID {observation_id} exists."
+            }), 404
+
+        if observation[0] != project_id:
+            return jsonify({
+                "success": False,
+                "error": "Observation does not belong to this project."
+            }), 400
+
+        # Delete observation_data first (foreign key constraint).
+        db.session.execute(
+            text("DELETE FROM observation_data WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+
+        # Delete observation.
+        db.session.execute(
+            text("DELETE FROM observations WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Observation ID:{observation_id} deleted successfully."
         }), 200
 
     except Exception as e:
