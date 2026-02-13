@@ -557,6 +557,447 @@ Failure Response (404 - Field Not Found):
 
 </blockquote>
 
+**Submit Observation**
+
+<blockquote>
+
+_Submits a new observation for a project. Does not require authentication._
+
+Endpoint:
+
+'POST /api/projects/{project_id}/observations'
+
+JSON Request Requirements:
+
+* project_id
+* student_name (optional)
+* field_data
+
+CURL Example:
+
+```
+curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects/23/observations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_name": "Alice Johnson",
+    "field_data": {
+      "15": "Blue Jay",
+      "16": "Sunny",
+      "17": "5"
+    }
+  }'
+```
+
+Success Response (201):
+
+```
+{
+  "success": true,
+  "message": "Observation submitted successfully!",
+  "data": {
+    "observation_id": 42,
+    "project_id": 23,
+    "student_name": "Alice Johnson",
+    "field_data": [
+      {
+        "field_id": 15,
+        "field_value": "Blue Jay"
+      },
+      {
+        "field_id": 16,
+        "field_value": "Sunny"
+      },
+      {
+        "field_id": 17,
+        "field_value": "5"
+      }
+    ]
+  }
+}
+```
+
+Failure Response (400 - Invalid Data):
+
+```
+{
+  "success": false,
+  "error": "field_data must be an object with field_id as keys."
+}
+```
+
+Failure Response (404 - Project Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with ID 23 exists."
+}
+```
+
+</blockquote>
+
+**Get All Observations for a Project**
+
+<blockquote>
+
+_Retrieves all associated observations for a specific project._
+
+Endpoint:
+
+'GET /api/projects/{project_id}/observations'
+
+JSON Request Requirements:
+
+* project_id
+
+CURL Example:
+
+```
+curl https://csafk-277534145495.us-east4.run.app/api/projects/23/observations
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "data": [
+    {
+      "observation_id": 42,
+      "project_id": 23,
+      "student_name": "Alice Johnson",
+      "field_data": [
+        {
+          "data_id": 101,
+          "field_id": 15,
+          "field_value": "Blue Jay",
+          "field_name": "bird_species",
+          "field_label": "Bird Species"
+        },
+        {
+          "data_id": 102,
+          "field_id": 16,
+          "field_value": "Sunny",
+          "field_name": "weather",
+          "field_label": "Weather Condition"
+        }
+      ]
+    },
+    {
+      "observation_id": 43,
+      "project_id": 23,
+      "student_name": "Bob Smith",
+      "field_data": [
+        {
+          "data_id": 103,
+          "field_id": 15,
+          "field_value": "Cardinal",
+          "field_name": "bird_species",
+          "field_label": "Bird Species"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Failure Response (404 - Project Not Found:
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with ID 23 exists."
+}
+```
+
+</blockquote>
+
+**Retrieve Specific Observation**
+
+<blockquote>
+
+_Retrieves a single observation._
+
+Endpoint:
+
+'GET /api/projects/{project_id}/observations/{observation_id}'
+
+JSON Request Requirements:
+
+* project_id
+* observation_id
+
+CURL Example:
+
+```
+curl https://csafk-277534145495.us-east4.run.app/api/projects/23/observations/42
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "data": {
+    "observation_id": 42,
+    "project_id": 23,
+    "student_name": "Alice Johnson",
+    "field_data": [
+      {
+        "data_id": 101,
+        "field_id": 15,
+        "field_value": "Blue Jay",
+        "field_name": "bird_species",
+        "field_label": "Bird Species"
+      },
+      {
+        "data_id": 102,
+        "field_id": 16,
+        "field_value": "Sunny",
+        "field_name": "weather",
+        "field_label": "Weather Condition"
+      }
+    ]
+  }
+}
+```
+
+Failure Response (404 - Observation Not Found):
+
+```
+{
+  "success": false,
+  "error": "Observation not found.",
+  "message": "No observation with ID 42 exists for this project."
+}
+```
+
+Failure Response (404 - Project Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with ID 23 exists."
+}
+```
+
+</blockquote>
+
+**Update Observation**
+
+<blockquote>
+
+_Updates an observation. Currently requires authentication. Will be revised for student integration._
+
+Endpoint:
+
+'PUT /api/projects/{project_id}/observations/{observation_id}'
+
+JSON Request Requirements:
+
+* project_id
+* observation_id
+* student_name (optional)
+* field_data (optional)
+
+CURL Example:
+
+```
+curl -X PUT https://csafk-277534145495.us-east4.run.app/api/projects/23/observations/42 \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=SESSION_COOKIE" \
+  -d '{
+    "student_name": "Alice Johnson (Updated)",
+    "field_data": {
+      "15": "Blue Jay (Adult)",
+      "17": "6"
+    }
+  }'
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "message": "Observation ID:42 updated successfully.",
+  "data": {
+    "observation_id": 42,
+    "project_id": 23
+  }
+}
+```
+
+Failure Response (400 - Invalid Data):
+
+```
+{
+  "success": false,
+  "error": "field_data must be an object with field_id as keys."
+}
+```
+
+Failure Response (400 - Incorrect Project):
+
+```
+{
+  "success": false,
+  "error": "Observation does not belong to this project."
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized.",
+  "message": "You don't have permission to update observations for this project."
+}
+```
+
+Failure Response (404 - Observation Not Found):
+
+```
+{
+  "success": false,
+  "error": "Observation not found.",
+  "message": "No observation with ID 42 exists."
+}
+```
+
+</blockquote>
+
+**Delete Observation**
+
+<blockquote>
+
+_Deletes an observation. Currently requires authentication, will be revised with "Update Observation" later._
+
+Endpoint:
+
+'DELETE /api/projects/{project_id}/observations/{observation_id}'
+
+JSON Request Requirements:
+
+* project_id
+* observation_id
+
+CURL Example:
+
+```
+curl -X DELETE https://csafk-277534145495.us-east4.run.app/api/projects/23/observations/42 \
+  -H "Cookie: session=SESSION_COOKIE"
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "message": "Observation ID:42 deleted successfully."
+}
+```
+
+Failure Response (400 - Incorrect Project):
+
+```
+{
+  "success": false,
+  "error": "Observation does not belong to this project."
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized.",
+  "message": "You don't have permission to delete observations for this project."
+}
+```
+
+Failure Response (404 - Observation Not Found):
+
+```
+{
+  "success": false,
+  "error": "Observation not found.",
+  "message": "No observation with ID 42 exists."
+}
+```
+
+</blockquote>
+
+**Get Project by Code - Student**
+
+<blockquote>
+
+_Retrieves project information with no authentication required. Used by students in the field app._
+
+Endpoint:
+
+'GET /api/student/project/{project_code}'
+
+JSON Request Requirements:
+
+* project_code
+
+CURL Example:
+
+```
+curl https://csafk-277534145495.us-east4.run.app/api/student/project/A82KP0QM
+```
+
+Success Response (200):
+
+```
+{
+  "success": true,
+  "data": {
+    "project_id": 1,
+    "project_code": "A82KP0QM",
+    "project_title": "Bumblebee Tracker",
+    "project_description": "Track different bumblees you see.",
+    "project_instructions": "Use the form below to fill out the type, number, and what time you saw the bumblebee.",
+    "fields": [
+      {
+        "field_id": 15,
+        "field_name": "bird_species",
+        "field_label": "Bird Species",
+        "field_type": "text",
+        "field_options": null,
+        "field_required": true
+      },
+      {
+        "field_id": 16,
+        "field_name": "weather",
+        "field_label": "Weather Condition",
+        "field_type": "dropdown",
+        "field_options": "[\"Sunny\", \"Cloudy\", \"Rainy\", \"Snowy\"]",
+        "field_required": false
+      }
+    ]
+  }
+}
+```
+
+Failure Response (404 - Project Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found.",
+  "message": "No project with code 'A82KP0QM' exists."
+}
+```
+
+</blockquote>
+
 **Endpoint Title**
 
 <blockquote>
