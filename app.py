@@ -69,7 +69,7 @@ CORS(app,
          "https://google.com",
          "NULL",
          "localhost:8081",
-         "https://field-app--development.expo.app/"
+         "https://field-app--development.expo.app"
      ],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
