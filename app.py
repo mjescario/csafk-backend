@@ -483,7 +483,7 @@ def get_project(project_id):
 
         result = db.session.execute(
             text("""
-                SELECT project_id, teacher_id, project_code, project_title, project_description, project_instructions
+                SELECT project_id, teacher_id, project_code, project_title, project_description, project_instructions, last_updated
                 FROM projects
                 WHERE project_id = :project_id
             """),
@@ -512,6 +512,7 @@ def get_project(project_id):
                 "project_title": project[3],
                 "project_description": project[4],
                 "project_instructions": project[5],
+                "last_updated": project[6].isoformat() if project[6] else None,
             }
         }), 200
 
@@ -537,7 +538,7 @@ def get_projects_by_teacher(teacher_id):
 
         result = db.session.execute(
             text("""
-                SELECT project_id, teacher_id, project_code, project_title, project_description, project_instructions
+                SELECT project_id, teacher_id, project_code, project_title, project_description, project_instructions, last_updated
                 FROM projects
                 WHERE teacher_id = :teacher_id
                 ORDER BY project_id DESC
@@ -556,6 +557,7 @@ def get_projects_by_teacher(teacher_id):
                 "project_title": p[3],
                 "project_description": p[4],
                 "project_instructions": p[5],
+                "last_updated": p[6].isoformat() if p[6] else None,
             })
 
         return jsonify({
@@ -653,7 +655,7 @@ def get_project_by_code(project_code):
         # Get project basic info.
         result = db.session.execute(
             text("""
-                SELECT project_id, project_code, project_title, project_description, project_instructions
+                SELECT project_id, project_code, project_title, project_description, project_instructions, last_updated
                 FROM projects
                 WHERE project_code = :project_code
             """),
@@ -703,6 +705,7 @@ def get_project_by_code(project_code):
                 "project_title": project[2],
                 "project_description": project[3],
                 "project_instructions": project[4],
+                "last_updated": project[5].isoformat() if project[5] else None,
                 "fields": fields_list
             }
         }), 200
@@ -1169,7 +1172,7 @@ def submit_observation(project_id):
                         "field_id": field_id,
                         "field_value": field_value_str,
                         "value_text": value_text,
-                "value_number": value_number,
+                        "value_number": value_number,
                         "value_date": value_date,
                         "value_boolean": value_boolean
                     }
