@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, session, redirect, url_for
+from flask import Flask, jsonify, request, session, redirect, url_for, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from sqlalchemy import text
@@ -7,6 +7,9 @@ from functools import wraps
 import random
 import string
 import os
+import csv
+import io
+from collections import defaultdict, OrderedDict
 from dotenv import load_dotenv
 from datetime import timedelta
 
@@ -1631,6 +1634,123 @@ def delete_observation(project_id, observation_id):
             "success": True,
             "message": f"Observation ID:{observation_id} deleted successfully."
         }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+# ==========
+# CSV Export Endpoint
+# ==========
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/export/csv", methods=["GET"])
+@login_required
+def export_observations_csv(project_id):
+    """
+    Export all observations for a project as a CSV file.
+    Requires teacher authentication and project ownership.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id, project_title FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        project = result.fetchone()
+
+        if not project:
+            return jsonify(ERROR_PROJECT_NOT_FOUND), 404
+
+        if project[0] != current_teacher['teacher_id']:
+            return jsonify(ERROR_UNAUTHORIZED), 403
+
+        project_title = project[1]
+
+        # Get all fields for this project (defines column order).
+        fields_result = db.session.execute(
+            text("""
+                SELECT field_id, field_label
+                FROM project_fields
+                WHERE project_id = :project_id
+                ORDER BY field_id ASC
+            """),
+            {"project_id": project_id}
+        )
+        fields = fields_result.fetchall()
+
+        # Get all observations with their data in one query.
+        obs_result = db.session.execute(
+            text("""
+                SELECT 
+                    o.observation_id,
+                    o.student_name,
+                    o.submitted_at,
+                    od.field_id,
+                    od.field_value
+                FROM observations o
+                LEFT JOIN observation_data od ON o.observation_id = od.observation_id
+                WHERE o.project_id = :project_id
+                ORDER BY o.observation_id DESC, od.field_id ASC
+            """),
+            {"project_id": project_id}
+        )
+        rows = obs_result.fetchall()
+
+        # Group field values by observation_id.
+        obs_map = OrderedDict()
+
+        for row in rows:
+            obs_id, student_name, submitted_at, field_id, field_value = row
+            if obs_id not in obs_map:
+                obs_map[obs_id] = {
+                    "observation_id": obs_id,
+                    "student_name": student_name,
+                    "submitted_at": submitted_at.isoformat() if submitted_at else "",
+                    "field_values": {}
+                }
+            if field_id is not None:
+                obs_map[obs_id]["field_values"][field_id] = field_value or ""
+
+        # Build CSV in memory.
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header row: fixed columns + one column per field label.
+        header = ["observation_id", "student_name", "submitted_at"]
+        header += [f[1] for f in fields]
+        writer.writerow(header)
+
+        # Data rows.
+        for obs in obs_map.values():
+            row = [
+                obs["observation_id"],
+                obs["student_name"],
+                obs["submitted_at"],
+            ]
+            for field_id, _ in fields:
+                row.append(obs["field_values"].get(field_id, ""))
+            writer.writerow(row)
+
+        output.seek(0)
+
+        # Sanitize project title for use in filename.
+        safe_title = "".join(
+            c if c.isalnum() or c in (' ', '-', '_') else '_'
+            for c in project_title
+        ).strip()
+        filename = f"{safe_title}_observations.csv"
+
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
 
     except Exception as e:
         db.session.rollback()
