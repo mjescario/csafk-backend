@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, session, redirect, url_for, Response
+from flask import Flask, jsonify, request, session, redirect, url_for, Response, current_app
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from sqlalchemy import text
@@ -12,7 +12,7 @@ import csv
 import io
 from collections import defaultdict, OrderedDict
 from dotenv import load_dotenv
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 # Load environment variables from .env file.
 load_dotenv()
@@ -1694,7 +1694,7 @@ def export_observations_csv(project_id):
         if not project:
             return jsonify(ERROR_PROJECT_NOT_FOUND), 404
 
-        if project[0] != current_teacher['teacher_id']:
+        if project[0] != current_teacher["teacher_id"]:
             return jsonify(ERROR_UNAUTHORIZED), 403
 
         project_title = project[1]
@@ -1711,10 +1711,14 @@ def export_observations_csv(project_id):
         )
         fields = fields_result.fetchall()
 
+        # Precompute ids/labels once (small perf + clarity win)
+        field_ids = [f[0] for f in fields]
+        field_labels = [f[1] for f in fields]
+
         # Get all observations with their data in one query.
         obs_result = db.session.execute(
             text("""
-                SELECT 
+                SELECT
                     o.observation_id,
                     o.student_name,
                     o.submitted_at,
@@ -1732,46 +1736,45 @@ def export_observations_csv(project_id):
         # Group field values by observation_id.
         obs_map = OrderedDict()
 
-        for row in rows:
-            obs_id, student_name, submitted_at, field_id, field_value = row
-            if obs_id not in obs_map:
-                obs_map[obs_id] = {
+        for obs_id, student_name, submitted_at, field_id, field_value in rows:
+            obs = obs_map.get(obs_id)
+            if obs is None:
+                obs = {
                     "observation_id": obs_id,
-                    "student_name": student_name,
+                    "student_name": student_name or "",
                     "submitted_at": submitted_at.isoformat() if submitted_at else "",
                     "field_values": {}
                 }
+                obs_map[obs_id] = obs
+
             if field_id is not None:
-                obs_map[obs_id]["field_values"][field_id] = field_value or ""
+                obs["field_values"][field_id] = field_value or ""
 
         # Build CSV in memory.
         output = io.StringIO()
         writer = csv.writer(output)
 
         # Header row: fixed columns + one column per field label.
-        header = ["observation_id", "student_name", "submitted_at"]
-        header += [f[1] for f in fields]
-        writer.writerow(header)
+        writer.writerow(["observation_id", "student_name", "submitted_at", *field_labels])
 
-        # Data rows.
+        # Data rows (write ONCE)
         for obs in obs_map.values():
-            row = [
-                obs["observation_id"],
-                obs["student_name"],
-                obs["submitted_at"],
-            ]
-            for field_id, _ in fields:
-                row.append(obs["field_values"].get(field_id, ""))
-            writer.writerow(row)
+            fv = obs["field_values"]
+            row_out = [obs["observation_id"], obs["student_name"], obs["submitted_at"]]
+            row_out.extend(fv.get(fid, "") for fid in field_ids)
+            writer.writerow(row_out)
 
         output.seek(0)
 
         # Sanitize project title for use in filename.
         safe_title = "".join(
-            c if c.isalnum() or c in (' ', '-', '_') else '_'
-            for c in project_title
-        ).strip()
-        filename = f"{safe_title}_observations.csv"
+            c if c.isalnum() or c in (" ", "-", "_") else "_"
+            for c in (project_title or "")
+        ).strip() or "project"
+
+        # Append UTC timestamp to filename
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"{safe_title}_observations_{timestamp}.csv"
 
         return Response(
             output.getvalue(),
@@ -1782,12 +1785,28 @@ def export_observations_csv(project_id):
             }
         )
 
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"Server Error": str(e)}), 500
+    except Exception:
+        current_app.logger.exception("CSV export failed for project_id=%s", project_id)
+        return jsonify({"Server Error": "Failed to export observations CSV."}), 500
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"Flask server started on port {port}.")
     app.run(debug=False, port=port, host="0.0.0.0")
+
+    # Header row: fixed columns + one column per field label.
+    header = ["observation_id", "student_name", "submitted_at"]
+    header += [f[1] for f in fields]
+    writer.writerow(header)
+
+    # Data rows.
+    for obs in obs_map.values():
+        row = [
+            obs["observation_id"],
+            obs["student_name"],
+            obs["submitted_at"],
+        ]
+        for field_id, _ in fields:
+            row.append(obs["field_values"].get(field_id, ""))
+        writer.writerow(row)
