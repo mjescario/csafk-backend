@@ -996,6 +996,70 @@ Failure Response (404 - Project Not Found):
 }
 ```
 
+**Export Observations as CSV**
+
+<blockquote>
+
+_Exports observations for a project as a downloadable CSV. Requires teacher authentication and project ownership. CSV consists of observations for each rows, and columns representing the observation ID, optional student name, submission time, and additional columns per field._
+
+Endpoint:
+
+`GET /api/projects/{project_id}/export/csv`
+
+JSON Request Requirements:
+
+* project_id
+
+CURL Example:
+
+```
+curl https://csafk-277534145495.us-east4.run.app/api/projects/23/export/csv \
+  -H "Cookie: session=SESSION_COOKIE" \
+  -o observations.csv
+```
+
+Success Response (200):
+
+Returns a `.csv` file download.
+
+Note: The filename is auto-generated with the project title.
+
+Failure Response (401 - Not Authenticated):
+
+```
+{
+  "success": false,
+  "error": "Authentication required",
+  "message": "Please log in to access this resource."
+}
+```
+
+Failure Response (403 - Unauthorized):
+
+```
+{
+  "success": false,
+  "error": "Unauthorized."
+}
+```
+
+Failure Response (404 - Project Not Found):
+
+```
+{
+  "success": false,
+  "error": "Project not found."
+}
+```
+
+Failure Response (500 - Server Error):
+
+```
+{
+  "Server Error:": "(error details)"
+}
+```
+
 </blockquote>
 
 **Endpoint Title**
