@@ -222,6 +222,67 @@ def get_or_create_teacher(google_id, email, name):
         raise e
 
 
+def resolve_typed_value(field_type, field_value):
+    """
+    Given a field_type and raw field_value, returns a dict of typed column values.
+    Centralizes the type-mapping logic used by submit_observation and update_observation.
+    """
+    value_text = None
+    value_number = None
+    value_date = None
+    value_boolean = None
+    value_time = None
+
+    if field_type == 'number':
+        try:
+            value_number = float(field_value) if field_value not in [None, ""] else None
+        except (ValueError, TypeError):
+            value_number = None
+
+    elif field_type == 'date':
+        try:
+            if field_value:
+                datetime.strptime(str(field_value), "%Y-%m-%d")
+                value_date = str(field_value)
+        except (ValueError, TypeError):
+            value_date = None
+
+    elif field_type == 'time':
+        try:
+            if field_value:
+                datetime.strptime(str(field_value), "%H:%M")
+                value_time = str(field_value)
+        except (ValueError, TypeError):
+            value_time = None
+
+    elif field_type == 'checkbox':
+        value_boolean = str(field_value).lower() in ['true', '1', 'yes', 'on'] if field_value else False
+
+    elif field_type == 'multiselect':
+        if isinstance(field_value, list):
+            value_text = json.dumps(field_value)
+        elif isinstance(field_value, str):
+            try:
+                json.loads(field_value)
+                value_text = field_value
+            except:
+                value_text = json.dumps([v.strip() for v in field_value.split(',')])
+        else:
+            value_text = json.dumps([])
+
+    else:
+        # text, textarea, radio, dropdown
+        value_text = str(field_value) if field_value is not None else ""
+
+    return {
+        "value_text": value_text,
+        "value_number": value_number,
+        "value_date": value_date,
+        "value_boolean": value_boolean,
+        "value_time": value_time,
+    }
+
+
 # ==========
 # Authentication Endpoints
 # ==========
@@ -775,7 +836,6 @@ def add_field(project_id):
         elif isinstance(raw_options, (list, dict)):
             options_obj = raw_options
         elif isinstance(raw_options, str):
-            # Treat string as JSON text, validate it
             try:
                 options_obj = json.loads(raw_options)
             except json.JSONDecodeError:
@@ -789,7 +849,6 @@ def add_field(project_id):
                 "error": "field_options must be a JSON array/object, a JSON string, or null."
             }), 400
 
-        # Canonical JSON text for binding. (DB column is JSON, but binding is scalar.)
         field_options_json = None if options_obj is None else json.dumps(options_obj)
 
         # Insert the field.
@@ -806,7 +865,7 @@ def add_field(project_id):
                 "field_name": data.get("field_name"),
                 "field_label": field_label,
                 "field_type": data.get("field_type"),
-                "field_options": field_options_json,  # <-- canonical JSON text or None
+                "field_options": field_options_json,
                 "field_required": field_required,
             },
         )
@@ -830,7 +889,6 @@ def add_field(project_id):
 
     except Exception as e:
         db.session.rollback()
-        # Revised this to protect SQL details. Logs server-side and returns generic client response.
         app.logger.exception("add_field failed")
         return jsonify({"success": False, "error": "Internal server error."}), 500
 
@@ -951,8 +1009,6 @@ def update_field(project_id, field_id):
                 "error": "Field does not belong to this project."
             }), 400
 
-        # Initialize update_fields and params using a loop over approved fields.
-        # Map API field names to database column names
         field_mapping = {
             "field_name": "field_name",
             "field_label": "field_label",
@@ -970,7 +1026,6 @@ def update_field(project_id, field_id):
                 update_fields.append(f"{db_field} = :{db_field}")
                 params[db_field] = data[api_field]
 
-        # Error Response if not valid.
         if not update_fields:
             return jsonify(ERROR_NO_FIELDS_TO_UPDATE), 400
 
@@ -1137,77 +1192,21 @@ def submit_observation(project_id):
 
             if field_info:
                 field_type = field_info[1]
-
-                # Determine which column to use based on field type.
-                value_text = None
-                value_number = None
-                value_date = None
-                value_boolean = None
-
-                # Map field types to storage columns.
-                numeric_types = ['number']
-                date_types = ['date']
-                boolean_types = ['checkbox']
-                multiselect_types = ['multiselect']
-                text_types = ['text', 'textarea', 'radio', 'time']
-
-                if field_type in numeric_types:
-                    try:
-                        value_number = float(field_value) if field_value not in [None, ""] else None
-                    except (ValueError, TypeError):
-                        value_number = None
-
-                elif field_type in date_types:
-                    try:
-                        # Validate date format.
-                        from datetime import datetime
-                        if field_value:
-                            datetime.strptime(str(field_value), "%Y-%m-%d")
-                            value_date = str(field_value)
-                    except (ValueError, TypeError):
-                        value_date = None
-
-                elif field_type in boolean_types:
-                    # Convert to boolean.
-                    value_boolean = str(field_value).lower() in ['true', '1', 'yes', 'on'] if field_value else False
-
-                elif field_type in multiselect_types:
-                    # Store as JSON array.
-                    import json
-                    if isinstance(field_value, list):
-                        value_text = json.dumps(field_value)
-                    elif isinstance(field_value, str):
-                        # If already JSON string, validate and store.
-                        try:
-                            json.loads(field_value)
-                            value_text = field_value
-                        except:
-                            # If comma-separated, convert to JSON array.
-                            value_text = json.dumps([v.strip() for v in field_value.split(',')])
-                    else:
-                        value_text = json.dumps([])
-
-                else:
-                    value_text = str(field_value) if field_value is not None else ""
-
-                # Store in field_value for backward compatibility.
+                typed_values = resolve_typed_value(field_type, field_value)
                 field_value_str = str(field_value) if field_value is not None else ""
 
                 db.session.execute(
                     text("""
                         INSERT INTO observation_data 
-                            (observation_id, field_id, field_value, value_text, value_number, value_date, value_boolean)
+                            (observation_id, field_id, field_value, value_text, value_number, value_date, value_boolean, value_time)
                         VALUES 
-                            (:observation_id, :field_id, :field_value, :value_text, :value_number, :value_date, :value_boolean)
+                            (:observation_id, :field_id, :field_value, :value_text, :value_number, :value_date, :value_boolean, :value_time)
                     """),
                     {
                         "observation_id": observation_id,
                         "field_id": field_id,
                         "field_value": field_value_str,
-                        "value_text": value_text,
-                        "value_number": value_number,
-                        "value_date": value_date,
-                        "value_boolean": value_boolean
+                        **typed_values
                     }
                 )
                 observation_data_list.append({
@@ -1481,53 +1480,7 @@ def update_observation(project_id, observation_id):
 
                 if field_info:
                     field_type = field_info[1]
-
-                    # Determine which column to use based on field type.
-                    value_text = None
-                    value_number = None
-                    value_date = None
-                    value_boolean = None
-
-                    numeric_types = ['number']
-                    date_types = ['date']
-                    boolean_types = ['checkbox']
-                    multiselect_types = ['multiselect']
-                    text_types = ['text', 'textarea', 'radio', 'time']
-
-                    if field_type in numeric_types:
-                        try:
-                            value_number = float(field_value) if field_value not in [None, ""] else None
-                        except (ValueError, TypeError):
-                            value_number = None
-
-                    elif field_type in date_types:
-                        try:
-                            from datetime import datetime
-                            if field_value:
-                                datetime.strptime(str(field_value), "%Y-%m-%d")
-                                value_date = str(field_value)
-                        except (ValueError, TypeError):
-                            value_date = None
-
-                    elif field_type in boolean_types:
-                        value_boolean = str(field_value).lower() in ['true', '1', 'yes', 'on'] if field_value else False
-
-                    elif field_type in multiselect_types:
-                        import json
-                        if isinstance(field_value, list):
-                            value_text = json.dumps(field_value)
-                        elif isinstance(field_value, str):
-                            try:
-                                json.loads(field_value)
-                                value_text = field_value
-                            except:
-                                value_text = json.dumps([v.strip() for v in field_value.split(',')])
-                        else:
-                            value_text = json.dumps([])
-
-                    else:
-                        value_text = str(field_value) if field_value is not None else ""
-
+                    typed_values = resolve_typed_value(field_type, field_value)
                     field_value_str = str(field_value) if field_value is not None else ""
 
                     # Check if data entry exists.
@@ -1540,7 +1493,6 @@ def update_observation(project_id, observation_id):
                     )
 
                     if existing_data.fetchone():
-                        # Update existing observation.
                         db.session.execute(
                             text("""
                                 UPDATE observation_data
@@ -1548,36 +1500,30 @@ def update_observation(project_id, observation_id):
                                     value_text = :value_text,
                                     value_number = :value_number,
                                     value_date = :value_date,
-                                    value_boolean = :value_boolean
+                                    value_boolean = :value_boolean,
+                                    value_time = :value_time
                                 WHERE observation_id = :observation_id AND field_id = :field_id
                             """),
                             {
                                 "field_value": field_value_str,
-                                "value_text": value_text,
-                                "value_number": value_number,
-                                "value_date": value_date,
-                                "value_boolean": value_boolean,
                                 "observation_id": observation_id,
-                                "field_id": field_id
+                                "field_id": field_id,
+                                **typed_values
                             }
                         )
                     else:
-                        # Insert new observation.
                         db.session.execute(
                             text("""
                                 INSERT INTO observation_data 
-                                    (observation_id, field_id, field_value, value_text, value_number, value_date, value_boolean)
+                                    (observation_id, field_id, field_value, value_text, value_number, value_date, value_boolean, value_time)
                                 VALUES 
-                                    (:observation_id, :field_id, :field_value, :value_text, :value_number, :value_date, :value_boolean)
+                                    (:observation_id, :field_id, :field_value, :value_text, :value_number, :value_date, :value_boolean, :value_time)
                             """),
                             {
                                 "observation_id": observation_id,
                                 "field_id": field_id,
                                 "field_value": field_value_str,
-                                "value_text": value_text,
-                                "value_number": value_number,
-                                "value_date": value_date,
-                                "value_boolean": value_boolean
+                                **typed_values
                             }
                         )
 
@@ -1711,7 +1657,6 @@ def export_observations_csv(project_id):
         )
         fields = fields_result.fetchall()
 
-        # Precompute ids/labels once (small perf + clarity win)
         field_ids = [f[0] for f in fields]
         field_labels = [f[1] for f in fields]
 
@@ -1757,7 +1702,7 @@ def export_observations_csv(project_id):
         # Header row: fixed columns + one column per field label.
         writer.writerow(["observation_id", "student_name", "submitted_at", *field_labels])
 
-        # Data rows (write ONCE)
+        # Data rows.
         for obs in obs_map.values():
             fv = obs["field_values"]
             row_out = [obs["observation_id"], obs["student_name"], obs["submitted_at"]]
@@ -1772,7 +1717,7 @@ def export_observations_csv(project_id):
             for c in (project_title or "")
         ).strip() or "project"
 
-        # Append UTC timestamp to filename
+        # Append UTC timestamp to filename.
         timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"{safe_title}_observations_{timestamp}.csv"
 
@@ -1794,19 +1739,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"Flask server started on port {port}.")
     app.run(debug=False, port=port, host="0.0.0.0")
-
-    # Header row: fixed columns + one column per field label.
-    header = ["observation_id", "student_name", "submitted_at"]
-    header += [f[1] for f in fields]
-    writer.writerow(header)
-
-    # Data rows.
-    for obs in obs_map.values():
-        row = [
-            obs["observation_id"],
-            obs["student_name"],
-            obs["submitted_at"],
-        ]
-        for field_id, _ in fields:
-            row.append(obs["field_values"].get(field_id, ""))
-        writer.writerow(row)
