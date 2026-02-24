@@ -4,6 +4,7 @@ from flask_cors import CORS
 from sqlalchemy import text
 from authlib.integrations.flask_client import OAuth
 from functools import wraps
+import json
 import random
 import string
 import os
@@ -726,11 +727,12 @@ def add_field(project_id):
     Add a new field to a project.
     """
     try:
-        data = request.get_json()
-        current_teacher = get_current_teacher()
-
-        if not data:
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({"success": False, "error": "Request body must be valid JSON."}), 400
+        if not isinstance(data, dict) or len(data) == 0:
             return jsonify(ERROR_NO_DATA), 400
+        current_teacher = get_current_teacher()
 
         # Check if project exists and belongs to current teacher.
         result = db.session.execute(
@@ -762,20 +764,46 @@ def add_field(project_id):
         field_label = data.get("field_label") or data.get("field_name")
         field_required = data.get("is_required", False) or data.get("field_required", False)
 
+        raw_options = data.get("field_options")
+
+        options_obj = None
+        if raw_options is None:
+            options_obj = None
+        elif isinstance(raw_options, (list, dict)):
+            options_obj = raw_options
+        elif isinstance(raw_options, str):
+            # Treat string as JSON text, validate it
+            try:
+                options_obj = json.loads(raw_options)
+            except json.JSONDecodeError:
+                return jsonify({
+                    "success": False,
+                    "error": "field_options string must be valid JSON (e.g., [\"a\",\"b\"])."
+                }), 400
+        else:
+            return jsonify({
+                "success": False,
+                "error": "field_options must be a JSON array/object, a JSON string, or null."
+            }), 400
+
+        # Canonical JSON text for binding. (DB column is JSON, but binding is scalar.)
+        field_options_json = None if options_obj is None else json.dumps(options_obj)
+
         # Insert the field.
         result = db.session.execute(
             text("""
                 INSERT INTO project_fields
                     (project_id, field_name, field_label, field_type, field_options, field_required)
                 VALUES
-                    (:project_id, :field_name, :field_label, :field_type, :field_options, :field_required)
+                    (:project_id, :field_name, :field_label, :field_type,
+                     CAST(:field_options AS JSON), :field_required)
             """),
             {
                 "project_id": project_id,
                 "field_name": data.get("field_name"),
                 "field_label": field_label,
                 "field_type": data.get("field_type"),
-                "field_options": data.get("field_options"),
+                "field_options": field_options_json,  # <-- canonical JSON text or None
                 "field_required": field_required,
             },
         )
@@ -792,14 +820,16 @@ def add_field(project_id):
                 "field_name": data.get("field_name"),
                 "field_label": field_label,
                 "field_type": data.get("field_type"),
-                "field_options": data.get("field_options"),
+                "field_options": options_obj,
                 "field_required": field_required,
             },
         }), 201
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"Server Error": str(e)}), 500
+        # Revised this to protect SQL details. Logs server-side and returns generic client response.
+        app.logger.exception("add_field failed")
+        return jsonify({"success": False, "error": "Internal server error."}), 500
 
 
 @app.route(f"{API_PREFIX}/projects/<int:project_id>/fields", methods=["GET"])
