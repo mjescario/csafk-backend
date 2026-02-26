@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Project Results — Citizen Science</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #1c2128;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --muted:     #7d8590;
+    --accent:    #39d353;
+    --accent2:   #58a6ff;
+    --accent3:   #f78166;
+    --accent4:   #ffa657;
+    --accent5:   #bc8cff;
+    --accent6:   #39c5cf;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── background grid texture ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.25;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── layout ── */
+  .shell {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  /* ── header ── */
+  .header {
+    padding: 48px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    animation: fadeDown 0.5s ease both;
+  }
+
+  .header-left { flex: 1; min-width: 220px; }
+
+  .breadcrumb {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .breadcrumb span { color: var(--accent2); }
+
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  h1 em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--accent);
+  }
+
+  .project-meta {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+  }
+  .meta-chip .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.4; transform: scale(0.75); }
+  }
+
+  /* ── header stats strip ── */
+  .stat-strip {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .stat-pill {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    min-width: 90px;
+    animation: fadeDown 0.5s ease both;
+  }
+  .stat-pill:nth-child(2) { animation-delay: 0.07s; }
+  .stat-pill:nth-child(3) { animation-delay: 0.14s; }
+  .stat-pill-value {
+    font-family: 'Fraunces', serif;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--accent);
+  }
+  .stat-pill-label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── section label ── */
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── observations table ── */
+  .table-wrapper {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 52px;
+    animation: fadeUp 0.5s ease 0.1s both;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead {
+    background: var(--surface2);
+  }
+  th {
+    padding: 11px 16px;
+    text-align: left;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    color: var(--text);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tbody tr {
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: var(--surface2); }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    margin: 1px 2px 1px 0;
+  }
+  .tag-green  { background: rgba(57,211,83,0.12);  color: var(--accent);  }
+  .tag-blue   { background: rgba(88,166,255,0.12); color: var(--accent2); }
+  .tag-orange { background: rgba(255,166,87,0.12); color: var(--accent4); }
+  .tag-red    { background: rgba(247,129,102,0.12);color: var(--accent3); }
+
+  .bool-yes { color: var(--accent);  font-family: 'DM Mono', monospace; font-size: 12px; }
+  .bool-no  { color: var(--muted);   font-family: 'DM Mono', monospace; font-size: 12px; }
+
+  /* ── charts grid ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 52px;
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+    animation: fadeUp 0.4s ease both;
+  }
+  .chart-card:hover {
+    border-color: var(--accent2);
+    transform: translateY(-2px);
+  }
+  .chart-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 14px 14px 0 0;
+  }
+  .chart-card.c-green::before  { background: var(--accent); }
+  .chart-card.c-blue::before   { background: var(--accent2); }
+  .chart-card.c-orange::before { background: var(--accent4); }
+  .chart-card.c-red::before    { background: var(--accent3); }
+  .chart-card.c-purple::before { background: var(--accent5); }
+  .chart-card.c-teal::before   { background: var(--accent6); }
+
+  .chart-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    gap: 8px;
+  }
+  .chart-card-title {
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .chart-type-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .badge-bar    { background: rgba(88,166,255,0.15); color: var(--accent2); }
+  .badge-pie    { background: rgba(57,211,83,0.15);  color: var(--accent);  }
+  .badge-line   { background: rgba(255,166,87,0.15); color: var(--accent4); }
+  .badge-number { background: rgba(188,140,255,0.15);color: var(--accent5); }
+  .badge-text   { background: rgba(125,133,144,0.15);color: var(--muted);   }
+
+  .chart-canvas-wrap {
+    position: relative;
+    height: 200px;
+  }
+  .chart-canvas-wrap.tall { height: 240px; }
+
+  /* numeric summary card */
+  .num-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .num-cell {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .num-cell-val {
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--accent5);
+    line-height: 1;
+  }
+  .num-cell-lbl {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 4px;
+  }
+  .num-cell.span2 {
+    grid-column: 1 / -1;
+  }
+  .num-cell.span2 .num-cell-val { color: var(--accent); }
+
+  /* text response card */
+  .text-count-wrap {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .text-count-num {
+    font-family: 'Fraunces', serif;
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--muted);
+  }
+  .text-count-label {
+    font-size: 13px;
+    color: var(--muted);
+    max-width: 140px;
+    line-height: 1.4;
+  }
+
+  /* ── CSV download bar ── */
+  .download-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-bottom: 52px;
+    flex-wrap: wrap;
+    gap: 16px;
+    animation: fadeUp 0.4s ease 0.2s both;
+  }
+  .download-bar-text h3 {
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .download-bar-text p {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .btn-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent);
+    color: #0d1117;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.15s, transform 0.15s;
+    white-space: nowrap;
+  }
+  .btn-download:hover { opacity: 0.85; transform: translateY(-1px); }
+
+  /* ── animations ── */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* stagger chart cards */
+  .chart-card:nth-child(1) { animation-delay: 0.05s; }
+  .chart-card:nth-child(2) { animation-delay: 0.10s; }
+  .chart-card:nth-child(3) { animation-delay: 0.15s; }
+  .chart-card:nth-child(4) { animation-delay: 0.20s; }
+  .chart-card:nth-child(5) { animation-delay: 0.25s; }
+  .chart-card:nth-child(6) { animation-delay: 0.30s; }
+  .chart-card:nth-child(7) { animation-delay: 0.35s; }
+
+  /* ── scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 600px) {
+    .charts-grid { grid-template-columns: 1fr; }
+    .header { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <div class="breadcrumb" id="breadcrumb">
+        My Projects &rsaquo; <span id="headerProjectTitle">Loading…</span>
+      </div>
+      <h1>Project <em>Results</em></h1>
+      <div class="project-meta">
+        <span class="meta-chip"><span class="dot"></span>Live</span>
+        <span class="meta-chip">Code: <strong style="color:var(--accent2);margin-left:4px" id="headerProjectCode">—</strong></span>
+        <span class="meta-chip" id="headerLastUpdated">—</span>
+      </div>
+    </div>
+    <div class="stat-strip">
+      <div class="stat-pill">
+        <div class="stat-pill-value" id="statObservations">—</div>
+        <div class="stat-pill-label">Observations</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-pill-value" style="color:var(--accent2)" id="statFields">—</div>
+        <div class="stat-pill-label">Fields</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- OBSERVATIONS TABLE -->
+  <div class="section-label">Observations</div>
+  <div class="table-wrapper">
+    <table>
+      <thead id="obsTableHead"><tr><th colspan="9" style="color:var(--muted);font-style:italic;font-weight:400">Loading observations…</th></tr></thead>
+      <tbody id="obsTableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="section-label">Field Analysis</div>
+  <div class="charts-grid" id="chartsGrid"></div>
+
+  <!-- CSV DOWNLOAD -->
+  <div class="section-label">Export</div>
+  <div class="download-bar">
+    <div class="download-bar-text">
+      <h3>Download Raw Data</h3>
+      <p id="csvBlurb">Export observations as a .csv file for further analysis in Excel or Google Sheets.</p>
+    </div>
+    <a class="btn-download" href="#" id="csvBtn">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/>
+        <path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.779a.749.749 0 1 1 1.06-1.06l1.97 1.97Z"/>
+      </svg>
+      Export CSV
+    </a>
+  </div>
+
+</div><!-- /shell -->
+
+<script>
+// ============================================================
+// CONFIG — edit these three values to switch environments
+// ============================================================
+const HOST       = 'http://localhost:8000';   // dev: 'http://localhost:8000'  |  prod: 'https://your-cloud-run-url'
+const PROJECT_ID = 272;                         // the project ID you want to view
+const API_PREFIX = '/api';
+// ============================================================
+
+const BASE_URL = `${HOST}${API_PREFIX}`;
+
+// ── Tag colour cycling for observation table ──
+const TAG_COLOURS = ['tag-blue','tag-green','tag-orange','tag-red','tag-purple'];
+function tagClass(i) { return TAG_COLOURS[i % TAG_COLOURS.length]; }
+
+// ── palette for charts ──
+const PALETTE = [
+  '#39d353','#58a6ff','#ffa657','#f78166','#bc8cff',
+  '#39c5cf','#e3b341','#db61a2','#79c0ff','#56d364'
+];
+const ACCENT_CLASSES = ['c-green','c-blue','c-orange','c-red','c-purple','c-teal'];
+
+// ── Chart.js global defaults ──
+Chart.defaults.color = '#7d8590';
+Chart.defaults.borderColor = '#30363d';
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 11;
+
+// ── Render header from stats payload ──
+function renderHeader(stats) {
+  document.title = `${stats.project_title} — Results`;
+  document.getElementById('headerProjectTitle').textContent = stats.project_title;
+  document.getElementById('statObservations').textContent  = stats.total_observations;
+  document.getElementById('statFields').textContent        = stats.fields.length;
+}
+
+// ── Render header from project payload ──
+function renderProjectMeta(project) {
+  document.getElementById('headerProjectCode').textContent = project.project_code;
+  const updated = project.last_updated
+    ? new Date(project.last_updated).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+    : '—';
+  document.getElementById('headerLastUpdated').textContent = `Last updated: ${updated}`;
+}
+
+// ── Render observations table from observations payload ──
+function renderObsTable(observations, fields) {
+  const thead = document.getElementById('obsTableHead');
+  const tbody = document.getElementById('obsTableBody');
+
+  // Build header: fixed columns + one per field
+  const fixedCols = ['#','Student'];
+  const fieldCols = fields.map(f => f.field_label);
+  thead.innerHTML = '<tr>' +
+    [...fixedCols, ...fieldCols].map(h => `<th>${h}</th>`).join('') +
+  '</tr>';
+
+  if (observations.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${fixedCols.length + fieldCols.length}" style="color:var(--muted);text-align:center;padding:28px">No observations yet.</td></tr>`;
+    return;
+  }
+
+  // Build a field_id → field_type lookup
+  const fieldTypeMap = {};
+  fields.forEach(f => { fieldTypeMap[f.field_id] = f.field_type; });
+
+  tbody.innerHTML = observations.map((obs, idx) => {
+    const num = String(idx + 1).padStart(3, '0');
+
+    // Index this observation's field_data by field_id
+    const dataById = {};
+    (obs.field_data || []).forEach(d => { dataById[d.field_id] = d.field_value; });
+
+    const fieldCells = fields.map(f => {
+      const raw  = dataById[f.field_id] ?? '';
+      const type = f.field_type;
+
+      if (type === 'checkbox') {
+        const yes = raw === 'true' || raw === '1' || raw === 'True';
+        return `<td>${yes ? '<span class="bool-yes">✓ Yes</span>' : '<span class="bool-no">✗ No</span>'}</td>`;
+      }
+
+      if (type === 'multiselect') {
+        let items = [];
+        try { items = JSON.parse(raw); } catch { items = raw ? [raw] : []; }
+        const tags = items.map((v, i) => `<span class="tag ${tagClass(i)}">${v}</span>`).join('');
+        return `<td>${tags || '—'}</td>`;
+      }
+
+      if (type === 'number') {
+        return `<td><span style="font-family:'DM Mono',monospace;color:var(--accent)">${raw || '—'}</span></td>`;
+      }
+
+      if (type === 'date' || type === 'time') {
+        return `<td><span style="font-family:'DM Mono',monospace;font-size:12px">${raw || '—'}</span></td>`;
+      }
+
+      if (type === 'dropdown' || type === 'radio') {
+        return `<td>${raw ? `<span class="tag ${tagClass(idx)}">${raw}</span>` : '—'}</td>`;
+      }
+
+      // text / textarea — truncate long values
+      const display = raw.length > 60 ? raw.slice(0, 57) + '…' : raw;
+      return `<td style="max-width:200px;word-break:break-word">${display || '—'}</td>`;
+    }).join('');
+
+    return `<tr>
+      <td><span style="font-family:'DM Mono',monospace;color:var(--muted);font-size:11px">${num}</span></td>
+      <td>${obs.student_name || '<span style="color:var(--muted)">Anonymous</span>'}</td>
+      ${fieldCells}
+    </tr>`;
+  }).join('');
+}
+
+// ── Chart builders ──
+function makePieChart(canvas, field) {
+  const labels = field.stats.frequency.map(f =>
+    f.value === 'true' ? 'Yes ✓' : f.value === 'false' ? 'No ✗' : f.value
+  );
+  const values = field.stats.frequency.map(f => f.count);
+  new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: PALETTE.slice(0, values.length).map(c => c + 'cc'),
+        borderColor: PALETTE.slice(0, values.length),
+        borderWidth: 1.5,
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } },
+        tooltip: { callbacks: {
+          label: ctx => ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed / values.reduce((a,b)=>a+b,0) * 100)}%)`
+        }}
+      }
+    }
+  });
+}
+
+function makeBarChart(canvas, field) {
+  const labels = field.stats.frequency.map(f => f.value);
+  const values = field.stats.frequency.map(f => f.count);
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Count', data: values,
+        backgroundColor: PALETTE.slice(0, values.length).map(c => c + '99'),
+        borderColor: PALETTE.slice(0, values.length),
+        borderWidth: 1.5, borderRadius: 5, borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: labels.length > 4 ? 'y' : 'x',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y ?? ctx.parsed.x} observations` } }
+      },
+      scales: {
+        x: { grid: { color: '#30363d55' }, ticks: { font: { size: 10 } } },
+        y: { grid: { color: '#30363d55' }, ticks: { stepSize: 1, font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function makeLineChart(canvas, field) {
+  const labels = field.stats.timeline.map(t => t.date);
+  const values = field.stats.timeline.map(t => t.count);
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Observations', data: values,
+        borderColor: '#ffa657', backgroundColor: '#ffa65722',
+        pointBackgroundColor: '#ffa657', pointRadius: 5, pointHoverRadius: 7,
+        fill: true, tension: 0.35
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} observations` } }
+      },
+      scales: {
+        x: { grid: { color: '#30363d55' }, ticks: { font: { size: 10 } } },
+        y: { grid: { color: '#30363d55' }, ticks: { stepSize: 1, font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function makeNumericCard(container, field) {
+  const s = field.stats;
+  container.innerHTML = `
+    <div class="num-summary">
+      <div class="num-cell span2">
+        <div class="num-cell-val">${s.mean ?? '—'}</div>
+        <div class="num-cell-lbl">Average</div>
+      </div>
+      <div class="num-cell">
+        <div class="num-cell-val" style="font-size:20px;color:var(--accent2)">${s.min ?? '—'}</div>
+        <div class="num-cell-lbl">Min</div>
+      </div>
+      <div class="num-cell">
+        <div class="num-cell-val" style="font-size:20px;color:var(--accent3)">${s.max ?? '—'}</div>
+        <div class="num-cell-lbl">Max</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:var(--muted)">Based on ${s.count} response${s.count!==1?'s':''}</div>
+  `;
+}
+
+function makeTextCard(container, field) {
+  container.innerHTML = `
+    <div class="text-count-wrap">
+      <div class="text-count-num">${field.stats.count}</div>
+      <div class="text-count-label">text response${field.stats.count!==1?'s':''} recorded — open-ended data not charted</div>
+    </div>
+  `;
+}
+
+function buildCharts(stats) {
+  const grid = document.getElementById('chartsGrid');
+  grid.innerHTML = '';
+  stats.fields.forEach((field, i) => {
+    const accentClass = ACCENT_CLASSES[i % ACCENT_CLASSES.length];
+    const badgeMap = {
+      bar: ['bar','Bar Chart'], pie: ['pie','Donut Chart'],
+      line: ['line','Timeline'], none: ['text','Text']
+    };
+    const isNumeric = field.field_type === 'number';
+    const [badgeClass, badgeLabel] = isNumeric
+      ? ['number','Numeric']
+      : (badgeMap[field.chart_type] || ['text','Text']);
+
+    const card = document.createElement('div');
+    card.className = `chart-card ${accentClass}`;
+    const needsCanvas = ['bar','pie','line'].includes(field.chart_type) && !isNumeric;
+
+    card.innerHTML = `
+      <div class="chart-card-header">
+        <div class="chart-card-title">${field.field_label}</div>
+        <span class="chart-type-badge badge-${badgeClass}">${badgeLabel}</span>
+      </div>
+      <div class="chart-content-area"></div>
+    `;
+    grid.appendChild(card);
+
+    const contentArea = card.querySelector('.chart-content-area');
+    if (isNumeric) {
+      makeNumericCard(contentArea, field);
+    } else if (field.chart_type === 'none') {
+      makeTextCard(contentArea, field);
+    } else if (needsCanvas) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'chart-canvas-wrap';
+      const canvas = document.createElement('canvas');
+      wrapper.appendChild(canvas);
+      contentArea.appendChild(wrapper);
+      if (field.chart_type === 'pie')        makePieChart(canvas, field);
+      else if (field.chart_type === 'bar')   makeBarChart(canvas, field);
+      else if (field.chart_type === 'line')  makeLineChart(canvas, field);
+    }
+  });
+}
+
+// ── Error display ──
+function showError(msg) {
+  document.getElementById('chartsGrid').innerHTML = `
+    <div style="grid-column:1/-1;background:var(--surface);border:1px solid var(--accent3);border-radius:12px;padding:28px 24px">
+      <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--accent3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Error loading data</div>
+      <div style="color:var(--muted);font-size:13px">${msg}</div>
+      <div style="margin-top:12px;font-size:12px;color:var(--muted)">
+        Make sure Flask is running on <code style="color:var(--accent2)">${HOST}</code>,
+        you are logged in at <a href="${HOST}${API_PREFIX}/login" style="color:var(--accent2)">${HOST}${API_PREFIX}/login</a>,
+        and project ID <code style="color:var(--accent2)">${PROJECT_ID}</code> belongs to your account.
+      </div>
+    </div>`;
+  document.getElementById('obsTableHead').innerHTML =
+    '<tr><th style="color:var(--accent3)">Failed to load</th></tr>';
+}
+
+// ── Wire up CSV download to real endpoint ──
+document.getElementById('csvBtn').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  btn.textContent = 'Downloading…';
+  btn.style.opacity = '0.7';
+  try {
+    const res = await fetch(`${BASE_URL}/projects/${PROJECT_ID}/export/csv`, {
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `project_${PROJECT_ID}_observations.csv`;
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    a.click(); URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(`CSV export failed: ${err.message}`);
+  } finally {
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.779a.749.749 0 1 1 1.06-1.06l1.97 1.97Z"/></svg> Export CSV`;
+    btn.style.opacity = '1';
+  }
+});
+
+// ── Main: fetch stats + project meta + observations in parallel ──
+(async () => {
+  try {
+    const [statsRes, projectRes, obsRes] = await Promise.all([
+      fetch(`${BASE_URL}/projects/${PROJECT_ID}/stats`,        { credentials: 'include' }),
+      fetch(`${BASE_URL}/projects/${PROJECT_ID}`,              { credentials: 'include' }),
+      fetch(`${BASE_URL}/projects/${PROJECT_ID}/observations`, { credentials: 'include' })
+    ]);
+
+    if (!statsRes.ok) {
+      const err = await statsRes.json().catch(() => ({}));
+      throw new Error(err.error || `Stats fetch failed with status ${statsRes.status}`);
+    }
+
+    const [statsJson, projectJson, obsJson] = await Promise.all([
+      statsRes.json(),
+      projectRes.ok ? projectRes.json() : Promise.resolve(null),
+      obsRes.ok     ? obsRes.json()     : Promise.resolve(null)
+    ]);
+
+    const stats      = statsJson.data;
+    const project    = projectJson?.data  ?? null;
+    const obsData    = obsJson?.data      ?? [];
+
+    // Populate header
+    renderHeader(stats);
+    if (project) renderProjectMeta(project);
+
+    // Update CSV blurb with real count
+    document.getElementById('csvBlurb').textContent =
+      `Export all ${stats.total_observations} observation${stats.total_observations !== 1 ? 's' : ''} as a .csv file for further analysis in Excel or Google Sheets.`;
+
+    // Render observations table using field order from stats
+    renderObsTable(obsData, stats.fields);
+
+    // Render charts
+    buildCharts(stats);
+
+  } catch (err) {
+    console.error('Dashboard load error:', err);
+    showError(err.message);
+  }
+})();
+</script>
+</body>
+</html>

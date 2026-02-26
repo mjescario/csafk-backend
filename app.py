@@ -74,7 +74,8 @@ CORS(app,
          "NULL",
          "localhost:8081",
          "http://localhost:8081",
-         "https://field-app--development.expo.app"
+         "https://field-app--development.expo.app",
+         "http://localhost:5500"
      ],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
@@ -1733,6 +1734,227 @@ def export_observations_csv(project_id):
     except Exception:
         current_app.logger.exception("CSV export failed for project_id=%s", project_id)
         return jsonify({"Server Error": "Failed to export observations CSV."}), 500
+
+
+# ==========
+# Get Project Stats
+# ==========
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/stats", methods=["GET"])
+@login_required
+def get_project_stats(project_id):
+    """
+    Returns aggregated stats for each field in a project, suitable for chart rendering.
+    Numeric fields get min/mean/max. Categorical fields get value frequency counts.
+    Checkbox fields read from value_boolean column.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Verify project exists and teacher owns it.
+        result = db.session.execute(
+            text("SELECT teacher_id, project_title FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        project = result.fetchone()
+
+        if not project:
+            return jsonify(ERROR_PROJECT_NOT_FOUND), 404
+
+        if project[0] != current_teacher["teacher_id"]:
+            return jsonify(ERROR_UNAUTHORIZED), 403
+
+        # Get all fields for this project.
+        fields_result = db.session.execute(
+            text("""
+                SELECT field_id, field_name, field_label, field_type
+                FROM project_fields
+                WHERE project_id = :project_id
+                ORDER BY field_id ASC
+            """),
+            {"project_id": project_id}
+        )
+        fields = fields_result.fetchall()
+
+        # Get total observation count.
+        obs_count_result = db.session.execute(
+            text("SELECT COUNT(*) FROM observations WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        total_observations = obs_count_result.fetchone()[0]
+
+        field_stats = []
+
+        for field_id, field_name, field_label, field_type in fields:
+
+            if field_type == "number":
+                # Numeric stats including min, max, mean, count.
+                num_result = db.session.execute(
+                    text("""
+                        SELECT
+                            COUNT(value_number),
+                            MIN(value_number),
+                            MAX(value_number),
+                            AVG(value_number)
+                        FROM observation_data
+                        WHERE field_id = :field_id
+                          AND value_number IS NOT NULL
+                    """),
+                    {"field_id": field_id}
+                )
+                row = num_result.fetchone()
+                count, min_val, max_val, avg_val = row
+
+                field_stats.append({
+                    "field_id": field_id,
+                    "field_name": field_name,
+                    "field_label": field_label,
+                    "field_type": field_type,
+                    "chart_type": "bar",
+                    "stats": {
+                        "count": count or 0,
+                        "min": float(min_val) if min_val is not None else None,
+                        "max": float(max_val) if max_val is not None else None,
+                        "mean": round(float(avg_val), 2) if avg_val is not None else None,
+                    }
+                })
+
+            elif field_type == "checkbox":
+                # Checkbox stores in value_boolean. Column is queried directly.
+                bool_result = db.session.execute(
+                    text("""
+                        SELECT value_boolean, COUNT(*) as freq
+                        FROM observation_data
+                        WHERE field_id = :field_id
+                          AND value_boolean IS NOT NULL
+                        GROUP BY value_boolean
+                        ORDER BY freq DESC
+                    """),
+                    {"field_id": field_id}
+                )
+                rows = bool_result.fetchall()
+                frequency = [
+                    {"value": "true" if r[0] else "false", "count": r[1]}
+                    for r in rows
+                ]
+
+                field_stats.append({
+                    "field_id": field_id,
+                    "field_name": field_name,
+                    "field_label": field_label,
+                    "field_type": field_type,
+                    "chart_type": "pie",
+                    "stats": {
+                        "frequency": frequency
+                    }
+                })
+
+            elif field_type in ("radio", "dropdown", "multiselect"):
+                # Categorical stats: frequency counts per value_text.
+                cat_result = db.session.execute(
+                    text("""
+                        SELECT value_text, COUNT(*) as freq
+                        FROM observation_data
+                        WHERE field_id = :field_id
+                          AND value_text IS NOT NULL
+                        GROUP BY value_text
+                        ORDER BY freq DESC
+                    """),
+                    {"field_id": field_id}
+                )
+                rows = cat_result.fetchall()
+
+                # Expanded multiselect type.
+                if field_type == "multiselect":
+                    expanded_counts = defaultdict(int)
+                    for value_text, freq in rows:
+                        try:
+                            values = json.loads(value_text)
+                            for v in values:
+                                expanded_counts[str(v)] += freq
+                        except (json.JSONDecodeError, TypeError):
+                            expanded_counts[value_text] += freq
+                    frequency = [{"value": k, "count": v} for k, v in expanded_counts.items()]
+                    frequency.sort(key=lambda x: x["count"], reverse=True)
+                else:
+                    frequency = [{"value": r[0], "count": r[1]} for r in rows]
+
+                field_stats.append({
+                    "field_id": field_id,
+                    "field_name": field_name,
+                    "field_label": field_label,
+                    "field_type": field_type,
+                    "chart_type": "pie" if len(frequency) <= 4 else "bar",
+                    "stats": {
+                        "frequency": frequency
+                    }
+                })
+
+            elif field_type in ("text", "textarea"):
+                # Text fields: just report response count.
+                text_result = db.session.execute(
+                    text("""
+                        SELECT COUNT(*)
+                        FROM observation_data
+                        WHERE field_id = :field_id
+                          AND value_text IS NOT NULL
+                          AND value_text != ''
+                    """),
+                    {"field_id": field_id}
+                )
+                count = text_result.fetchone()[0]
+
+                field_stats.append({
+                    "field_id": field_id,
+                    "field_name": field_name,
+                    "field_label": field_label,
+                    "field_type": field_type,
+                    "chart_type": "none",
+                    "stats": {
+                        "count": count or 0
+                    }
+                })
+
+            elif field_type == "date":
+                # Date fields: count observations per date for a timeline view.
+                date_result = db.session.execute(
+                    text("""
+                        SELECT value_date, COUNT(*) as freq
+                        FROM observation_data
+                        WHERE field_id = :field_id
+                          AND value_date IS NOT NULL
+                        GROUP BY value_date
+                        ORDER BY value_date ASC
+                    """),
+                    {"field_id": field_id}
+                )
+                rows = date_result.fetchall()
+                timeline = [{"date": str(r[0]), "count": r[1]} for r in rows]
+
+                field_stats.append({
+                    "field_id": field_id,
+                    "field_name": field_name,
+                    "field_label": field_label,
+                    "field_type": field_type,
+                    "chart_type": "line",
+                    "stats": {
+                        "timeline": timeline
+                    }
+                })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "project_id": project_id,
+                "project_title": project[1],
+                "total_observations": total_observations,
+                "fields": field_stats
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
 
 
 if __name__ == "__main__":
