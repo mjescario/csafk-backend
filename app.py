@@ -1277,7 +1277,7 @@ def get_all_observations(project_id):
             # Get observation_data for this observation.
             data_result = db.session.execute(
                 text("""
-                    SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label, pf.field_type
+                    SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label, pf.field_type, od.value_text
                     FROM observation_data od
                     JOIN project_fields pf ON od.field_id = pf.field_id
                     WHERE od.observation_id = :observation_id
@@ -1288,13 +1288,16 @@ def get_all_observations(project_id):
 
             field_data = []
             for data in data_result.fetchall():
+                field_type = data[5]
+                # For multiselect, use value_text (proper JSON) instead of field_value.
+                field_value = data[6] if field_type == "multiselect" else data[2]
                 field_data.append({
                     "data_id": data[0],
                     "field_id": data[1],
-                    "field_value": data[2],
+                    "field_value": field_value,
                     "field_name": data[3],
                     "field_label": data[4],
-                    "field_type": data[5],
+                    "field_type": field_type,
                 })
 
             observations_list.append({
@@ -1358,7 +1361,7 @@ def get_observation(project_id, observation_id):
         # Get observation_data.
         data_result = db.session.execute(
             text("""
-                SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label, pf.field_type
+                SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label, pf.field_type, od.value_text
                 FROM observation_data od
                 JOIN project_fields pf ON od.field_id = pf.field_id
                 WHERE od.observation_id = :observation_id
@@ -1369,13 +1372,16 @@ def get_observation(project_id, observation_id):
 
         field_data = []
         for data in data_result.fetchall():
+            field_type = data[5]
+            # For multiselect, use value_text (proper JSON) instead of field_value.
+            field_value = data[6] if field_type == "multiselect" else data[2]
             field_data.append({
                 "data_id": data[0],
                 "field_id": data[1],
-                "field_value": data[2],
+                "field_value": field_value,
                 "field_name": data[3],
                 "field_label": data[4],
-                "field_type": data[5],
+                "field_type": field_type,
             })
 
         return jsonify({
