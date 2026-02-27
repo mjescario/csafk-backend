@@ -1443,22 +1443,26 @@ def update_observation(project_id, observation_id):
                 "error": "Observation does not belong to this project."
             }), 400
 
-        # Determine auth path: teacher session or student token.
-        if current_teacher:
-            # Teacher path: verify they own the project.
-            if project[0] != current_teacher['teacher_id']:
+        # Adjusted to check to see if student_id is present in the request.
+        # Fix is needed because logged in teachers would override the student_id token check,
+        submitted_token = data.get("student_id", "").strip()
+
+        if submitted_token:
+            # Student path: verify the token matches what's stored on the observation.
+            stored_token = observation[1] or ""
+            if submitted_token != stored_token:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "Invalid student ID. You can only edit your own observations."
+                return jsonify(error_response), 403
+        elif current_teacher:
+            # Teacher path (no student_id in body): verify they own the project.
+            if project[0] != current_teacher["teacher_id"]:
                 error_response = ERROR_UNAUTHORIZED.copy()
                 error_response["message"] = "You don't have permission to update observations for this project."
                 return jsonify(error_response), 403
         else:
-            # Student path: verify the student_id in the request matches what's stored.
-            submitted_token = data.get("student_id", "").strip()
-            stored_token = observation[1] or ""
-
-            if not submitted_token or submitted_token != stored_token:
-                error_response = ERROR_UNAUTHORIZED.copy()
-                error_response["message"] = "Invalid student ID. You can only edit your own observations."
-                return jsonify(error_response), 403
+            # Neither a student token nor a teacher session — reject.
+            return jsonify(ERROR_AUTH_REQUIRED), 401
 
         # Update student_name if provided (available to both teachers and students).
         if "student_name" in data:
