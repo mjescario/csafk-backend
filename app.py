@@ -1147,8 +1147,9 @@ def submit_observation(project_id):
             error_response["message"] = f"No project with ID {project_id} exists."
             return jsonify(error_response), 404
 
-        # Extract student_name and field_data from request.
+        # Extract student_name, student_id, and field_data from request.
         student_name = data.get("student_name", "")
+        student_id = data.get("student_id", "")
         field_data = data.get("field_data", {})
 
         if not isinstance(field_data, dict):
@@ -1160,12 +1161,13 @@ def submit_observation(project_id):
         # Create the observation record.
         result = db.session.execute(
             text("""
-                INSERT INTO observations (project_id, student_name)
-                VALUES (:project_id, :student_name)
+                INSERT INTO observations (project_id, student_name, student_id)
+                VALUES (:project_id, :student_name, :student_id)
             """),
             {
                 "project_id": project_id,
-                "student_name": student_name
+                "student_name": student_name,
+                "student_id": student_id,
             }
         )
 
@@ -1212,7 +1214,8 @@ def submit_observation(project_id):
                 )
                 observation_data_list.append({
                     "field_id": field_id,
-                    "field_value": field_value_str
+                    "field_value": field_value_str,
+                    "field_type": field_type,
                 })
 
         db.session.commit()
@@ -1224,6 +1227,7 @@ def submit_observation(project_id):
                 "observation_id": observation_id,
                 "project_id": project_id,
                 "student_name": student_name,
+                "student_id": student_id,
                 "field_data": observation_data_list
             }
         }), 201
@@ -1256,7 +1260,7 @@ def get_all_observations(project_id):
         # Get all observations for the project.
         result = db.session.execute(
             text("""
-                SELECT observation_id, project_id, student_name
+                SELECT observation_id, project_id, student_name, student_id, submitted_at
                 FROM observations
                 WHERE project_id = :project_id
                 ORDER BY observation_id DESC
@@ -1273,7 +1277,7 @@ def get_all_observations(project_id):
             # Get observation_data for this observation.
             data_result = db.session.execute(
                 text("""
-                    SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label
+                    SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label, pf.field_type
                     FROM observation_data od
                     JOIN project_fields pf ON od.field_id = pf.field_id
                     WHERE od.observation_id = :observation_id
@@ -1289,13 +1293,16 @@ def get_all_observations(project_id):
                     "field_id": data[1],
                     "field_value": data[2],
                     "field_name": data[3],
-                    "field_label": data[4]
+                    "field_label": data[4],
+                    "field_type": data[5],
                 })
 
             observations_list.append({
                 "observation_id": obs[0],
                 "project_id": obs[1],
                 "student_name": obs[2],
+                "student_id": obs[3],
+                "submitted_at": obs[4].isoformat() if obs[4] else None,
                 "field_data": field_data
             })
 
@@ -1332,7 +1339,7 @@ def get_observation(project_id, observation_id):
         # Get the observation.
         result = db.session.execute(
             text("""
-                SELECT observation_id, project_id, student_name
+                SELECT observation_id, project_id, student_name, student_id, submitted_at
                 FROM observations
                 WHERE observation_id = :observation_id AND project_id = :project_id
             """),
@@ -1351,7 +1358,7 @@ def get_observation(project_id, observation_id):
         # Get observation_data.
         data_result = db.session.execute(
             text("""
-                SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label
+                SELECT od.data_id, od.field_id, od.field_value, pf.field_name, pf.field_label, pf.field_type
                 FROM observation_data od
                 JOIN project_fields pf ON od.field_id = pf.field_id
                 WHERE od.observation_id = :observation_id
@@ -1367,7 +1374,8 @@ def get_observation(project_id, observation_id):
                 "field_id": data[1],
                 "field_value": data[2],
                 "field_name": data[3],
-                "field_label": data[4]
+                "field_label": data[4],
+                "field_type": data[5],
             })
 
         return jsonify({
@@ -1376,6 +1384,8 @@ def get_observation(project_id, observation_id):
                 "observation_id": observation[0],
                 "project_id": observation[1],
                 "student_name": observation[2],
+                "student_id": observation[3],
+                "submitted_at": observation[4].isoformat() if observation[4] else None,
                 "field_data": field_data
             }
         }), 200
@@ -1389,6 +1399,8 @@ def get_observation(project_id, observation_id):
 def update_observation(project_id, observation_id):
     """
     Update an observation and its field data.
+    Supports two auth paths: teacher session (must own the project) and student
+    token (student_id token from field app must match original student_id token).
     """
     try:
         data = request.get_json()
@@ -1397,7 +1409,7 @@ def update_observation(project_id, observation_id):
         if not data:
             return jsonify(ERROR_NO_DATA), 400
 
-        # Check if project exists and belongs to current teacher.
+        # Check if project exists.
         result = db.session.execute(
             text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
             {"project_id": project_id}
@@ -1410,15 +1422,9 @@ def update_observation(project_id, observation_id):
             error_response["message"] = f"No project with ID {project_id} exists."
             return jsonify(error_response), 404
 
-        # Verify ownership.
-        if project[0] != current_teacher['teacher_id']:
-            error_response = ERROR_UNAUTHORIZED.copy()
-            error_response["message"] = "You don't have permission to update observations for this project."
-            return jsonify(error_response), 403
-
         # Check if observation exists and belongs to this project.
         result = db.session.execute(
-            text("SELECT project_id FROM observations WHERE observation_id = :observation_id"),
+            text("SELECT project_id, student_id FROM observations WHERE observation_id = :observation_id"),
             {"observation_id": observation_id}
         )
 
@@ -1437,7 +1443,24 @@ def update_observation(project_id, observation_id):
                 "error": "Observation does not belong to this project."
             }), 400
 
-        # Update student_name if provided.
+        # Determine auth path: teacher session or student token.
+        if current_teacher:
+            # Teacher path: verify they own the project.
+            if project[0] != current_teacher['teacher_id']:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "You don't have permission to update observations for this project."
+                return jsonify(error_response), 403
+        else:
+            # Student path: verify the student_id in the request matches what's stored.
+            submitted_token = data.get("student_id", "").strip()
+            stored_token = observation[1] or ""
+
+            if not submitted_token or submitted_token != stored_token:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "Invalid student ID. You can only edit your own observations."
+                return jsonify(error_response), 403
+
+        # Update student_name if provided (available to both teachers and students).
         if "student_name" in data:
             db.session.execute(
                 text("""
