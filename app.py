@@ -4,12 +4,14 @@ from flask_cors import CORS
 from sqlalchemy import text
 from authlib.integrations.flask_client import OAuth
 from functools import wraps
+from google.cloud import storage
 import json
 import random
 import string
 import os
 import csv
 import io
+import uuid
 from collections import defaultdict, OrderedDict
 from dotenv import load_dotenv
 from datetime import timedelta, datetime
@@ -106,6 +108,27 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Initialize database.
 db = SQLAlchemy(app)
+
+# ==========
+# Google Cloud Storage Configuration
+# ==========
+
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+
+
+def upload_photo_to_gcs(file):
+    client = storage.Client()
+    bucket = client.bucket(GCS_BUCKET_NAME)
+
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+    blob_name = f"observations/{uuid.uuid4()}.{ext}"
+    blob = bucket.blob(blob_name)
+
+    blob.upload_from_file(file, content_type=file.content_type)
+
+    # Construct public URL directly (works with uniform bucket-level access).
+    return f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/{blob_name}"
+
 
 # ==========
 # OAuth Configuration
@@ -1260,7 +1283,7 @@ def get_all_observations(project_id):
         # Get all observations for the project.
         result = db.session.execute(
             text("""
-                SELECT observation_id, project_id, student_name, student_id, submitted_at
+                SELECT observation_id, project_id, student_name, student_id, submitted_at, photo_url
                 FROM observations
                 WHERE project_id = :project_id
                 ORDER BY observation_id DESC
@@ -1306,6 +1329,7 @@ def get_all_observations(project_id):
                 "student_name": obs[2],
                 "student_id": obs[3],
                 "submitted_at": obs[4].isoformat() if obs[4] else None,
+                "photo_url": obs[5],
                 "field_data": field_data
             })
 
@@ -1342,7 +1366,7 @@ def get_observation(project_id, observation_id):
         # Get the observation.
         result = db.session.execute(
             text("""
-                SELECT observation_id, project_id, student_name, student_id, submitted_at
+                SELECT observation_id, project_id, student_name, student_id, submitted_at, photo_url
                 FROM observations
                 WHERE observation_id = :observation_id AND project_id = :project_id
             """),
@@ -1392,6 +1416,7 @@ def get_observation(project_id, observation_id):
                 "student_name": observation[2],
                 "student_id": observation[3],
                 "submitted_at": observation[4].isoformat() if observation[4] else None,
+                "photo_url": observation[5],
                 "field_data": field_data
             }
         }), 200
@@ -1643,6 +1668,91 @@ def delete_observation(project_id, observation_id):
         return jsonify({
             "success": True,
             "message": f"Observation ID:{observation_id} deleted successfully."
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>/photo", methods=["POST"])
+def upload_observation_photo(project_id, observation_id):
+    """
+    Upload a photo for an observation. Accepts multipart/form-data with a 'photo' file field.
+    Auth: teacher session or matching student_id token (same pattern as update_observation).
+    Uploads to GCS and saves the public URL to observations.photo_url.
+    """
+    try:
+        if 'photo' not in request.files:
+            return jsonify({"success": False, "error": "No photo file provided."}), 400
+
+        file = request.files['photo']
+        if file.filename == '':
+            return jsonify({"success": False, "error": "Empty filename."}), 400
+
+        # Validate file type.
+        allowed_types = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+        if file.content_type not in allowed_types:
+            return jsonify({"success": False, "error": "Invalid file type. Must be JPEG, PNG, GIF, or WebP."}), 400
+
+        # Check project exists.
+        project_result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        project = project_result.fetchone()
+
+        if not project:
+            return jsonify(ERROR_PROJECT_NOT_FOUND), 404
+
+        # Check observation exists and belongs to this project.
+        obs_result = db.session.execute(
+            text("SELECT project_id, student_id FROM observations WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+        observation = obs_result.fetchone()
+
+        if not observation:
+            return jsonify({"success": False, "error": "Observation not found."}), 404
+
+        if observation[0] != project_id:
+            return jsonify({"success": False, "error": "Observation does not belong to this project."}), 400
+
+        # Auth: same pattern as update_observation.
+        current_teacher = get_current_teacher()
+        submitted_token = request.form.get("student_id", "").strip()
+
+        if submitted_token:
+            stored_token = observation[1] or ""
+            if submitted_token != stored_token:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "Invalid student ID. You can only edit your own observations."
+                return jsonify(error_response), 403
+        elif current_teacher:
+            if project[0] != current_teacher["teacher_id"]:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "You don't have permission to update this observation."
+                return jsonify(error_response), 403
+        else:
+            return jsonify(ERROR_AUTH_REQUIRED), 401
+
+        # Upload to GCS.
+        photo_url = upload_photo_to_gcs(file)
+
+        # Save URL to the observation.
+        db.session.execute(
+            text("UPDATE observations SET photo_url = :photo_url WHERE observation_id = :observation_id"),
+            {"photo_url": photo_url, "observation_id": observation_id}
+        )
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Photo uploaded successfully.",
+            "data": {
+                "observation_id": observation_id,
+                "photo_url": photo_url
+            }
         }), 200
 
     except Exception as e:
