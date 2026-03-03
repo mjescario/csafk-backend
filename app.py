@@ -1777,6 +1777,95 @@ def upload_observation_photo(project_id, observation_id):
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
 
+    @app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>/photo", methods=["DELETE"])
+    def delete_observation_photo(project_id, observation_id):
+    """
+    Delete the photo for an observation.
+    Removes the file from GCS and clears photo_url from the observations table.
+    Requires authorization of either teacher or student.
+    """
+    try:
+        # Check project exists.
+        project_result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        project = project_result.fetchone()
+
+        if not project:
+            return jsonify(ERROR_PROJECT_NOT_FOUND), 404
+
+        # Check observation exists and belongs to this project.
+        obs_result = db.session.execute(
+            text(
+                "SELECT project_id, student_id, photo_url FROM observations WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+        observation = obs_result.fetchone()
+
+        if not observation:
+            return jsonify({"success": False, "error": "Observation not found."}), 404
+
+        if observation[0] != project_id:
+            return jsonify({"success": False, "error": "Observation does not belong to this project."}), 400
+
+        photo_url = observation[2]
+        if not photo_url:
+            return jsonify({"success": False, "error": "No photo to delete."}), 404
+
+        # Check authentication for teacher or student.
+        current_teacher = get_current_teacher()
+        data = request.get_json(silent=True) or {}
+        submitted_token = data.get("student_id", "").strip()
+
+        if submitted_token:
+            stored_token = observation[1] or ""
+            if submitted_token != stored_token:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "Invalid student ID. You can only edit your own observations."
+                return jsonify(error_response), 403
+        elif current_teacher:
+            if project[0] != current_teacher["teacher_id"]:
+                error_response = ERROR_UNAUTHORIZED.copy()
+                error_response["message"] = "You don't have permission to update this observation."
+                return jsonify(error_response), 403
+        else:
+            return jsonify(ERROR_AUTH_REQUIRED), 401
+
+        # Delete blob from GCS.
+        # URL format: https://storage.googleapis.com/{bucket}/{blob_name}
+        prefix = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/"
+        if photo_url.startswith(prefix):
+            blob_name = photo_url[len(prefix):]
+            try:
+                client = storage.Client()
+                bucket = client.bucket(GCS_BUCKET_NAME)
+                blob = bucket.blob(blob_name)
+                blob.delete()
+            except Exception as gcs_error:
+                app.logger.warning("GCS blob deletion failed for %s: %s", blob_name, gcs_error)
+                # Continue anyway — still clear the DB record.
+
+        # Clear photo_url in DB.
+        db.session.execute(
+            text("UPDATE observations SET photo_url = NULL WHERE observation_id = :observation_id"),
+            {"observation_id": observation_id}
+        )
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Photo deleted successfully.",
+            "data": {
+                "observation_id": observation_id,
+                "photo_url": None
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
 
 # ==========
 # CSV Export Endpoint
@@ -1971,7 +2060,7 @@ def get_project_stats(project_id):
                     "field_name": field_name,
                     "field_label": field_label,
                     "field_type": field_type,
-                    "chart_type": "bar",
+                    "chart_type": "number",
                     "stats": {
                         "count": count or 0,
                         "min": float(min_val) if min_val is not None else None,
