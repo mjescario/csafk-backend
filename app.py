@@ -1777,8 +1777,8 @@ def upload_observation_photo(project_id, observation_id):
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
 
-    @app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>/photo", methods=["DELETE"])
-    def delete_observation_photo(project_id, observation_id):
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/observations/<int:observation_id>/photo", methods=["DELETE"])
+def delete_observation_photo(project_id, observation_id):
     """
     Delete the photo for an observation.
     Removes the file from GCS and clears photo_url from the observations table.
@@ -1861,7 +1861,7 @@ def upload_observation_photo(project_id, observation_id):
                 "photo_url": None
             }
         }), 200
-
+    
     except Exception as e:
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
