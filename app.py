@@ -1150,6 +1150,8 @@ def submit_observation(project_id):
     No authentication required - accessible by both teachers and students.
     Creates an observation record and associated observation_data records.
     Stores values in appropriate typed columns based on field type.
+    Accepts optional latitude and longitude coordinates from the field app
+    when the student has granted location permissions.
     """
     try:
         data = request.get_json()
@@ -1170,10 +1172,20 @@ def submit_observation(project_id):
             error_response["message"] = f"No project with ID {project_id} exists."
             return jsonify(error_response), 404
 
-        # Extract student_name, student_id, and field_data from request.
+        # Extract student_name, student_id, field_data, and optional location from request.
         student_name = data.get("student_name", "")
         student_id = data.get("student_id", "")
         field_data = data.get("field_data", {})
+
+        # Optional GPS coordinates supplied by field app when location permission is granted.
+        latitude = data.get("latitude")
+        longitude = data.get("longitude")
+        try:
+            latitude = float(latitude) if latitude is not None else None
+            longitude = float(longitude) if longitude is not None else None
+        except (ValueError, TypeError):
+            latitude = None
+            longitude = None
 
         if not isinstance(field_data, dict):
             return jsonify({
@@ -1184,13 +1196,15 @@ def submit_observation(project_id):
         # Create the observation record.
         result = db.session.execute(
             text("""
-                INSERT INTO observations (project_id, student_name, student_id)
-                VALUES (:project_id, :student_name, :student_id)
+                INSERT INTO observations (project_id, student_name, student_id, latitude, longitude)
+                VALUES (:project_id, :student_name, :student_id, :latitude, :longitude)
             """),
             {
                 "project_id": project_id,
                 "student_name": student_name,
                 "student_id": student_id,
+                "latitude": latitude,
+                "longitude": longitude,
             }
         )
 
@@ -1251,6 +1265,8 @@ def submit_observation(project_id):
                 "project_id": project_id,
                 "student_name": student_name,
                 "student_id": student_id,
+                "latitude": latitude,
+                "longitude": longitude,
                 "field_data": observation_data_list
             }
         }), 201
@@ -1283,7 +1299,7 @@ def get_all_observations(project_id):
         # Get all observations for the project.
         result = db.session.execute(
             text("""
-                SELECT observation_id, project_id, student_name, student_id, submitted_at, photo_url
+                SELECT observation_id, project_id, student_name, student_id, submitted_at, photo_url, latitude, longitude
                 FROM observations
                 WHERE project_id = :project_id
                 ORDER BY observation_id DESC
@@ -1339,6 +1355,8 @@ def get_all_observations(project_id):
                 "student_id": obs[3],
                 "submitted_at": obs[4].isoformat() if obs[4] else None,
                 "photo_url": obs[5],
+                "latitude": float(obs[6]) if obs[6] is not None else None,
+                "longitude": float(obs[7]) if obs[7] is not None else None,
                 "field_data": field_data
             })
 
@@ -1375,7 +1393,7 @@ def get_observation(project_id, observation_id):
         # Get the observation.
         result = db.session.execute(
             text("""
-                SELECT observation_id, project_id, student_name, student_id, submitted_at, photo_url
+                SELECT observation_id, project_id, student_name, student_id, submitted_at, photo_url, latitude, longitude
                 FROM observations
                 WHERE observation_id = :observation_id AND project_id = :project_id
             """),
@@ -1435,6 +1453,8 @@ def get_observation(project_id, observation_id):
                 "student_id": observation[3],
                 "submitted_at": observation[4].isoformat() if observation[4] else None,
                 "photo_url": observation[5],
+                "latitude": float(observation[6]) if observation[6] is not None else None,
+                "longitude": float(observation[7]) if observation[7] is not None else None,
                 "field_data": field_data
             }
         }), 200
@@ -1450,6 +1470,7 @@ def update_observation(project_id, observation_id):
     Update an observation and its field data.
     Supports two auth paths: teacher session (must own the project) and student
     token (student_id token from field app must match original student_id token).
+    Accepts optional latitude and longitude coordinates for location updates.
     """
     try:
         data = request.get_json()
@@ -1525,6 +1546,23 @@ def update_observation(project_id, observation_id):
                     "student_name": data.get("student_name", ""),
                     "observation_id": observation_id
                 }
+            )
+
+        # Update location coordinates if provided.
+        if "latitude" in data or "longitude" in data:
+            try:
+                new_lat = float(data["latitude"]) if data.get("latitude") is not None else None
+                new_lng = float(data["longitude"]) if data.get("longitude") is not None else None
+            except (ValueError, TypeError):
+                new_lat = None
+                new_lng = None
+            db.session.execute(
+                text("""
+                    UPDATE observations
+                    SET latitude = :latitude, longitude = :longitude
+                    WHERE observation_id = :observation_id
+                """),
+                {"latitude": new_lat, "longitude": new_lng, "observation_id": observation_id}
             )
 
         # Update field_data if provided.
@@ -1861,7 +1899,7 @@ def delete_observation_photo(project_id, observation_id):
                 "photo_url": None
             }
         }), 200
-    
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"Server Error": str(e)}), 500
@@ -1918,6 +1956,8 @@ def export_observations_csv(project_id):
                     o.observation_id,
                     o.student_name,
                     o.submitted_at,
+                    o.latitude,
+                    o.longitude,
                     od.field_id,
                     od.field_value
                 FROM observations o
@@ -1932,13 +1972,15 @@ def export_observations_csv(project_id):
         # Group field values by observation_id.
         obs_map = OrderedDict()
 
-        for obs_id, student_name, submitted_at, field_id, field_value in rows:
+        for obs_id, student_name, submitted_at, latitude, longitude, field_id, field_value in rows:
             obs = obs_map.get(obs_id)
             if obs is None:
                 obs = {
                     "observation_id": obs_id,
                     "student_name": student_name or "",
                     "submitted_at": submitted_at.isoformat() if submitted_at else "",
+                    "latitude": str(float(latitude)) if latitude is not None else "",
+                    "longitude": str(float(longitude)) if longitude is not None else "",
                     "field_values": {}
                 }
                 obs_map[obs_id] = obs
@@ -1951,12 +1993,18 @@ def export_observations_csv(project_id):
         writer = csv.writer(output)
 
         # Header row: fixed columns + one column per field label.
-        writer.writerow(["observation_id", "student_name", "submitted_at", *field_labels])
+        writer.writerow(["observation_id", "student_name", "submitted_at", "latitude", "longitude", *field_labels])
 
         # Data rows.
         for obs in obs_map.values():
             fv = obs["field_values"]
-            row_out = [obs["observation_id"], obs["student_name"], obs["submitted_at"]]
+            row_out = [
+                obs["observation_id"],
+                obs["student_name"],
+                obs["submitted_at"],
+                obs["latitude"],
+                obs["longitude"],
+            ]
             row_out.extend(fv.get(fid, "") for fid in field_ids)
             writer.writerow(row_out)
 
