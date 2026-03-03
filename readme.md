@@ -282,7 +282,7 @@ Endpoint:
 JSON Request Requirements:
 
 * field_name (required)
-* field_type (required - types: text, textarea, number, date, time, checkbox, dropdown, radio)
+* field_type (required - types: text, textarea, number, date, time, checkbox, dropdown, radio, multiselect)
 * field_label - label that is displayed on the page.
 * field_options - JSON string for multiple choice (checkbox, dropdown, radio) options
 * is_required - Boolean value (default is false) that determines if a field is required.
@@ -298,6 +298,21 @@ curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects/23/fields 
     "field_label": "Bird Species",
     "field_type": "text",
     "is_required": true
+  }'
+```
+
+CURL Example (Multiselect):
+
+```
+curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects/23/fields \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session=YOUR_SESSION_COOKIE" \
+  -d '{
+    "field_name": "habitat_types",
+    "field_label": "Habitat Types",
+    "field_type": "multiselect",
+    "field_options": "[\"Forest\", \"Wetland\", \"Grassland\", \"Urban\"]",
+    "is_required": false
   }'
 ```
 
@@ -586,6 +601,14 @@ curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects/23/observa
       "17": "5"
     }
   }'
+```
+
+** Note that multiselect values should be submitted as a JSON array:
+
+```
+"field_data": {
+  "18": ["Forest", "Wetland"]
+}
 ```
 
 Success Response (201):
