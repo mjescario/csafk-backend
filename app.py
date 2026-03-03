@@ -1312,8 +1312,17 @@ def get_all_observations(project_id):
             field_data = []
             for data in data_result.fetchall():
                 field_type = data[5]
+                display_format = request.args.get("format") == "string"
                 # For multiselect, use value_text (proper JSON) instead of field_value.
-                field_value = data[6] if field_type == "multiselect" else data[2]
+                # Checks to see if string arg is present.
+                if field_type == "multiselect":
+                    try:
+                        parsed = json.loads(data[6])
+                        field_value = ", ".join(parsed) if display_format else data[6]
+                    except (json.JSONDecodeError, TypeError):
+                        field_value = data[6]
+                else:
+                    field_value = data[2]
                 field_data.append({
                     "data_id": data[0],
                     "field_id": data[1],
@@ -1397,8 +1406,17 @@ def get_observation(project_id, observation_id):
         field_data = []
         for data in data_result.fetchall():
             field_type = data[5]
+            display_format = request.args.get("format") == "string"
             # For multiselect, use value_text (proper JSON) instead of field_value.
-            field_value = data[6] if field_type == "multiselect" else data[2]
+            # Checks to see if string arg is present.
+            if field_type == "multiselect":
+                try:
+                    parsed = json.loads(data[6])
+                    field_value = ", ".join(parsed) if display_format else data[6]
+                except (json.JSONDecodeError, TypeError):
+                    field_value = data[6]
+            else:
+                field_value = data[2]
             field_data.append({
                 "data_id": data[0],
                 "field_id": data[1],
