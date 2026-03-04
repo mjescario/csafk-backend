@@ -586,6 +586,8 @@ JSON Request Requirements:
 
 * project_id
 * student_name (optional)
+* latitude (optional)
+* longitude (optional)
 * field_data
 
 CURL Example:
@@ -595,6 +597,8 @@ curl -X POST https://csafk-277534145495.us-east4.run.app/api/projects/23/observa
   -H "Content-Type: application/json" \
   -d '{
     "student_name": "Alice Johnson",
+    "latitude": 45.5231,
+    "longitude": -122.6765,
     "field_data": {
       "15": "Blue Jay",
       "16": "Sunny",
@@ -621,6 +625,8 @@ Success Response (201):
     "observation_id": 42,
     "project_id": 23,
     "student_name": "Alice Johnson",
+    "latitude": 45.5231,
+    "longitude": -122.6765,
     "field_data": [
       {
         "field_id": 15,
@@ -767,6 +773,8 @@ Success Response (200):
     "observation_id": 42,
     "project_id": 23,
     "student_name": "Alice Johnson",
+    "latitude": 45.5231,
+    "longitude": -122.6765,
     "field_data": [
       {
         "data_id": 101,
@@ -824,6 +832,8 @@ JSON Request Requirements:
 * project_id
 * observation_id
 * student_name (optional)
+* latitude (optional)
+* longitude (optional)
 * field_data (optional)
 
 CURL Example:
@@ -834,6 +844,8 @@ curl -X PUT https://csafk-277534145495.us-east4.run.app/api/projects/23/observat
   -H "Cookie: session=SESSION_COOKIE" \
   -d '{
     "student_name": "Alice Johnson (Updated)",
+    "latitude": 45.5232,
+    "longitude": -122.6766,
     "field_data": {
       "15": "Blue Jay (Adult)",
       "17": "6"
