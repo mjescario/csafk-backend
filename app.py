@@ -77,7 +77,8 @@ CORS(app,
          "localhost:8081",
          "http://localhost:8081",
          "https://field-app--development.expo.app",
-         "http://localhost:5500"
+         "http://localhost:5500",
+         "http://localhost:8000"
      ],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
@@ -973,6 +974,68 @@ def get_fields(project_id):
         return jsonify({
             "success": True,
             "data": fields_list
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"Server Error": str(e)}), 500
+
+
+@app.route(f"{API_PREFIX}/projects/<int:project_id>/fields/<int:field_id>", methods=["GET"])
+@login_required
+def get_field(project_id, field_id):
+    """
+    Retrieve a single field by ID for a project.
+    """
+    try:
+        current_teacher = get_current_teacher()
+
+        # Check project exists and belongs to current teacher.
+        result = db.session.execute(
+            text("SELECT teacher_id FROM projects WHERE project_id = :project_id"),
+            {"project_id": project_id}
+        )
+        project = result.fetchone()
+
+        if not project:
+            error_response = ERROR_PROJECT_NOT_FOUND.copy()
+            error_response["message"] = f"No project with ID {project_id} exists."
+            return jsonify(error_response), 404
+
+        if project[0] != current_teacher['teacher_id']:
+            error_response = ERROR_UNAUTHORIZED.copy()
+            error_response["message"] = "You don't have permission to view fields for this project."
+            return jsonify(error_response), 403
+
+        # Get the specific field.
+        result = db.session.execute(
+            text("""
+                SELECT field_id, project_id, field_name, field_label, field_type, field_options, field_required
+                FROM project_fields
+                WHERE field_id = :field_id AND project_id = :project_id
+            """),
+            {"field_id": field_id, "project_id": project_id}
+        )
+        field = result.fetchone()
+
+        if not field:
+            return jsonify({
+                "success": False,
+                "error": "Field not found.",
+                "message": f"No field with ID {field_id} exists for project {project_id}."
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "field_id": field[0],
+                "project_id": field[1],
+                "field_name": field[2],
+                "field_label": field[3],
+                "field_type": field[4],
+                "field_options": field[5],
+                "field_required": bool(field[6]),
+            }
         }), 200
 
     except Exception as e:
