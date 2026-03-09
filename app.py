@@ -1185,6 +1185,12 @@ def delete_field(project_id, field_id):
                 "error": "Field does not belong to this project."
             }), 400
 
+        # Delete observation_data rows that reference this field first.
+        db.session.execute(
+            text("DELETE FROM observation_data WHERE field_id = :field_id"),
+            {"field_id": field_id}
+        )
+
         db.session.execute(
             text("DELETE FROM project_fields WHERE field_id = :field_id"),
             {"field_id": field_id},
